@@ -1,7 +1,9 @@
+import random
+
 from faker import Faker
 from faker_food import FoodProvider
+
 from ..config import SEED
-import random
 
 fake = Faker("pt-BR")
 fake.add_provider(FoodProvider)

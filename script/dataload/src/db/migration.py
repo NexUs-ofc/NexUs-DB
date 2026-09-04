@@ -1,4 +1,5 @@
 import os
+
 from .postgres import PostgresConnection
 
 BASE = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "script")
@@ -15,8 +16,3 @@ def run_migrations(pg: PostgresConnection):
   for script in scripts:
     pg.execute_sql_file(os.path.join(BASE, script))
     print(f"[MIGRATION] Script {script} executado com sucesso.")
-
-
-
-
-

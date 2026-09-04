@@ -1,9 +1,10 @@
-import random
 import itertools
+import random
+
+from ..config import TAMANHOS
+from ..core.ids import RANGES
 from ..core.rng import get_faker
 from ..core.schemas.pantry import PantryItem, PantryProductSetting
-from ..core.ids import RANGES
-from ..config import TAMANHOS
 
 fake = get_faker()
 

@@ -36,7 +36,7 @@ CREATE TABLE profile (
 
 CREATE TABLE profile_phone (
     profile_id INTEGER NOT NULL REFERENCES profile(id) ON DELETE CASCADE,
-    phone VARCHAR(16) NOT NULL CHECK (phone ~ '^\+[1-9][0-9]{7,14}$'),
+    phone VARCHAR(16) NOT NULL,
     CONSTRAINT pk_profile_phone PRIMARY KEY (profile_id, phone)
 );
 
@@ -51,7 +51,7 @@ CREATE TABLE auth_method (
 
 CREATE UNIQUE INDEX uq_external_auth_identity
     ON auth_method (provider, credential)
-    WHERE provider IN ('GOOGLE', 'MICROSOFT');
+    WHERE provider = 'GOOGLE';
 
 CREATE TABLE pantry_item (
     id SERIAL PRIMARY KEY,
