@@ -1,8 +1,9 @@
 import random
-from ..core.rng import get_faker
-from ..core.schemas.account import Profile, ProfilePhone, AuthMethod
-from ..core.ids import RANGES
+
 from ..config import TAMANHOS
+from ..core.ids import RANGES
+from ..core.rng import get_faker
+from ..core.schemas.account import AuthMethod, Profile, ProfilePhone
 
 fake = get_faker()
 

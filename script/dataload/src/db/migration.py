@@ -1,4 +1,5 @@
 import os
+
 from .postgres import PostgresConnection
 
 BASE = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "script")

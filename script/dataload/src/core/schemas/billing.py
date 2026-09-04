@@ -1,7 +1,8 @@
-from .base import BaseEntity
-from typing import Optional
-from datetime import date, datetime
 from dataclasses import dataclass
+from datetime import date, datetime
+
+from .base import BaseEntity
+
 
 @dataclass(kw_only=True)
 class Plan(BaseEntity):
@@ -9,8 +10,8 @@ class Plan(BaseEntity):
   plan_price: float
   store_limit: int
   is_active: bool = True
-  description: Optional[str] = None
-  updated_at: Optional[datetime] = None
+  description: str | None = None
+  updated_at: datetime | None = None
 
 
 @dataclass(kw_only=True)
@@ -36,5 +37,5 @@ class Payment(BaseEntity):
   company_id: int
   plan_id: int
   amount: float
-  paid_at: Optional[datetime] = None
-  updated_at: Optional[datetime] = None
+  paid_at: datetime | None = None
+  updated_at: datetime | None = None
