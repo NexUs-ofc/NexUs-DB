@@ -51,7 +51,7 @@ CREATE TABLE auth_method (
 
 CREATE UNIQUE INDEX uq_external_auth_identity
     ON auth_method (provider, credential)
-    WHERE provider IN ('GOOGLE', 'MICROSOFT');
+    WHERE provider = 'GOOGLE';
 
 CREATE TABLE pantry_item (
     id SERIAL PRIMARY KEY,
