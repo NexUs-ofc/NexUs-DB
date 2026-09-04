@@ -3,3 +3,4 @@ pymongo
 faker
 faker_food
 python-dotenv
+ruff
