@@ -1,6 +1,7 @@
-from .base import BaseEntity
-from typing import Optional
 from dataclasses import dataclass
+
+from .base import BaseEntity
+
 
 @dataclass(kw_only=True)
 class Category(BaseEntity):
@@ -13,4 +14,4 @@ class Food(BaseEntity):
   category_id: int
   package_quantity: float
   unit_of_measure: str
-  product_brand: Optional[str] = None
+  product_brand: str | None = None

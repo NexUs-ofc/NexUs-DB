@@ -1,9 +1,10 @@
 import random
-from ..core.rng import get_faker
-from ..core.ids import RANGES
+
 from ..config import TAMANHOS
+from ..core.ids import RANGES
+from ..core.mongo_ids import EVENT_OIDS, RECIPE_OIDS
+from ..core.rng import get_faker
 from ..seed import FOOD_NAMES
-from ..core.mongo_ids import RECIPE_OIDS, EVENT_OIDS
 
 fake = get_faker()
 

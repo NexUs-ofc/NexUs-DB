@@ -1,5 +1,7 @@
 from pymongo import MongoClient
+
 from ..config import get_env
+
 
 class MongoConnection:
     def __init__(self):

@@ -1,11 +1,12 @@
 import random
 import re
 from datetime import timedelta
-from ..core.rng import get_faker
-from ..core.schemas.billing import Plan, Company, Store, Payment
-from ..core.ids import RANGES
-from ..seed import PLANS as FIXED_PLANS
+
 from ..config import TAMANHOS
+from ..core.ids import RANGES
+from ..core.rng import get_faker
+from ..core.schemas.billing import Company, Payment, Plan, Store
+from ..seed import PLANS as FIXED_PLANS
 
 fake = get_faker()
 

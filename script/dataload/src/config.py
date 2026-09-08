@@ -1,5 +1,7 @@
 import os
+
 from dotenv import load_dotenv
+
 from .core.ids import TOTAL_PROFILES
 
 load_dotenv()

@@ -1,11 +1,11 @@
-from typing import Optional
-from datetime import datetime
 from dataclasses import dataclass
+from datetime import datetime
+
 
 @dataclass
 class BaseEntity:
-    id: Optional[int] = None
-    created_at: Optional[datetime] = None
+    id: int | None = None
+    created_at: datetime | None = None
 
     def to_dict(self) -> dict:
         resultado = {}

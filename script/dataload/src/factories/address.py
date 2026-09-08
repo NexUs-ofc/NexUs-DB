@@ -1,7 +1,6 @@
-import re
+from ..config import TAMANHOS
 from ..core.rng import get_faker
 from ..core.schemas.address import Address
-from ..config import TAMANHOS
 
 fake = get_faker()
 

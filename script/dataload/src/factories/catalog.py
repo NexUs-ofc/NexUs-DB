@@ -1,7 +1,8 @@
 import random
+
+from ..config import TAMANHOS
 from ..core.rng import get_faker
 from ..core.schemas.catalog import Category, Food
-from ..config import TAMANHOS
 from ..seed import CATEGORIES
 
 fake = get_faker()

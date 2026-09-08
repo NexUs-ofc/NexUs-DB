@@ -1,9 +1,9 @@
 import argparse
 
-from .db.postgres import PostgresConnection
-from .db.mongo import MongoConnection
 from .db.migration import run_migrations
-from .seeders import postgres_seeder, mongo_seeder
+from .db.mongo import MongoConnection
+from .db.postgres import PostgresConnection
+from .seeders import mongo_seeder, postgres_seeder
 
 
 def seed_sql():

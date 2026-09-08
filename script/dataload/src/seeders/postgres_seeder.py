@@ -1,6 +1,6 @@
-from ..factories.base import to_dicts
-from ..factories import catalog, address, account, billing, pantry
 from ..config import TAMANHOS
+from ..factories import account, address, billing, catalog, pantry
+from ..factories.base import to_dicts
 from ..seed import get_all_fixed
 
 
