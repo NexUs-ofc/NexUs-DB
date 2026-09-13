@@ -8,15 +8,14 @@ PostgreSQL MongoDB Python
 
 O repositório tem três frentes:
 
-- **Schema SQL** — DDL, enums, funções e triggers do PostgreSQL, versionados sob `script/`.
-- **Dataload** — gera e popula dados fictícios no PostgreSQL e no MongoDB (`script/dataload`).
+- **Schema SQL** — DDL, enums, funções e triggers do PostgreSQL, versionado com Flyway sob `migrations/`.
+- **Dataload** — popula dados fictícios no PostgreSQL e no MongoDB (`script/dataload`), assumindo o schema já aplicado.
 - **Auxiliares** — views de BI, scripts de monitoramento e placeholders para trabalhos futuros.
 
 ```
 NexUs-DB/
+├── migrations/                # migrations Flyway (schema versionado)
 ├── script/
-│   ├── 01_ddl_estrutura/     # reset, tipos (enums), tabelas, índices
-│   ├── 02_objetos_logicos/   # funções + triggers
 │   ├── 03_bi_views/          # views de BI (a definir)
 │   ├── 04_monitoramento/     # scripts de monitoramento
 │   └── dataload/             # carga de dados (Postgres + Mongo)
@@ -28,13 +27,11 @@ NexUs-DB/
 
 ## Schema PostgreSQL
 
-Os scripts em `script/01_ddl_estrutura/` e `script/02_objetos_logicos/` definem o banco. A ordem de aplicação é a numeração dos arquivos:
-
-1. `reset.sql` — dropa tabelas e tipos existentes (CASCADE)
-2. `001_tipos.sql` — enums
-3. `002_tabelas.sql` — tabelas
-4. `02_objetos_logicos/001_functions.sql` — funções
-5. `02_objetos_logicos/002_triggers.sql` — triggers
+O schema é versionado com [Flyway](https://flywaydb.org/) em `migrations/` — mesmo
+contrato de banco usado pelo `auth-api` e pelo `NexUs-Core`. Veja
+[migrations/README.md](migrations/README.md) para como aplicar (inclui o passo de
+baseline necessário nos ambientes onde essas migrations já foram executadas
+manualmente).
 
 ### Enums
 
@@ -44,7 +41,7 @@ Os scripts em `script/01_ddl_estrutura/` e `script/02_objetos_logicos/` definem 
 | `profile_status_enum` | `ACTIVE`, `INACTIVE`, `BLOCKED` |
 | `unit_of_measure_enum` | `g`, `kg`, `ml`, `l`, `unit` |
 | `payment_status_enum` | `PENDING`, `PAID`, `OVERDUE`, `CANCELLED` |
-| `auth_provider_enum` | `GOOGLE`, `PASSWORD` |
+| `auth_provider_enum` | `GOOGLE`, `PASSWORD` (removido `MICROSOFT` na V2) |
 
 ### Tabelas
 
@@ -70,11 +67,13 @@ As regras vivem em funções + triggers, não na camada de aplicação:
 - **`validate_profile_reference_type(tipo)`** — garante que `profile_id` de `pantry_item`, `pantry_product_setting`, `company` e `store` aponte para um profile do tipo esperado (`HOUSEHOLD`, `COMPANY`, `STORE`). Aplica via triggers de `BEFORE INSERT/UPDATE`.
 - **`prevent_profile_type_change()`** — impede que o `type` de um profile seja alterado depois de criado.
 
-Nota sobre IDs: as tabelas usam `INTEGER PRIMARY KEY` sem `SERIAL` (o DDL foi desenhado para carga de dados). o próximo ID é obtido com `MAX(id)+1` no momento da inserção.
+Nota sobre IDs: as tabelas usam `SERIAL PRIMARY KEY` (auto-incremento nativo do Postgres).
 
 ## Dataload
 
-O dataload em `script/dataload/` aplica o schema e popula os dois bancos com dados fictícios determinísticos (seed fixo).
+O dataload em `script/dataload/` popula os dois bancos com dados fictícios
+determinísticos (seed fixo). Ele **não aplica mais o schema** — isso agora é
+responsabilidade do Flyway (`migrations/`), rodado antes do dataload.
 
 Dependências: `psycopg2-binary`, `pymongo`, `faker`, `faker_food`, `python-dotenv` (ver `requirements.txt`).
 
@@ -82,13 +81,12 @@ Dependências: `psycopg2-binary`, `pymongo`, `faker`, `faker_food`, `python-dote
 pip install -r requirements.txt
 ```
 
-Comandos (rodar a partir da raiz `NexUs-DB/`):
+Comandos (rodar a partir da raiz `NexUs-DB/`, com o schema já aplicado via Flyway):
 
 ```bash
-python -m script.dataload.src.main init        # aplica as migrations
 python -m script.dataload.src.main seed-sql    # popula o PostgreSQL
 python -m script.dataload.src.main seed-mongo  # popula o MongoDB
-python -m script.dataload.src.main all         # init + seed-sql + seed-mongo
+python -m script.dataload.src.main all         # seed-sql + seed-mongo
 ```
 
 Configuração: o arquivo `.env` (na raiz) é carregado pelo dataload:
@@ -109,11 +107,10 @@ Detalhes de implementação do dataload (factories, seeders, collections do Mong
 ## Configuração do ambiente
 
 - Crie um `.env` na raiz com as credenciais de PostgreSQL e MongoDB (o `.env` é o único arquivo ignorado no `.gitignore`).
-- O schema assume um banco PostgreSQL com o schema `dataload` como `search_path` (as tools do dataload usam esse schema diretamente).
+- Aplique o schema com Flyway (`migrations/`) antes de rodar o dataload.
 
 ## Em andamento / placeholders
 
 - `script/03_bi_views/` — views de BI ainda não definidas.
 - `script/04_monitoramento/script_dau.sql` — métrica de DAU, ainda sem conteúdo.
-- `script/01_ddl_estrutura/003_indices.sql` — índices adicionais pendentes (o TODO fica no próprio arquivo da migration).
 - `doc/` e `rpa/` — vazios, aguardando trabalho.

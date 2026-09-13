@@ -1,6 +1,5 @@
 import argparse
 
-from .db.migration import run_migrations
 from .db.mongo import MongoConnection
 from .db.postgres import PostgresConnection
 from .seeders import mongo_seeder, postgres_seeder
@@ -22,14 +21,8 @@ def seed_mongo():
 
 def main():
     parser = argparse.ArgumentParser(description="NexUs-DB dataload")
-    parser.add_argument("comando", choices=["init", "seed-sql", "seed-mongo", "all"])
+    parser.add_argument("comando", choices=["seed-sql", "seed-mongo", "all"])
     args = parser.parse_args()
-
-    if args.comando in ("init", "all"):
-        pg = PostgresConnection()
-        run_migrations(pg)
-        pg.close()
-        print("[OK] Migrations aplicadas.")
 
     if args.comando in ("seed-sql", "all"):
         seed_sql()

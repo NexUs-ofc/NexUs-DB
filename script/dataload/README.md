@@ -65,10 +65,10 @@ O `config.py` chama `load_dotenv()`, que procura o `.env` no diretório de traba
 
 ## Como rodar
 
+Aplique o schema com Flyway antes (veja [migrations/README.md](../../migrations/README.md)).
 A partir da raiz `NexUs-DB/`:
 
 ```bash
-python -m script.dataload.src.main init
 python -m script.dataload.src.main seed-sql
 python -m script.dataload.src.main seed-mongo
 python -m script.dataload.src.main all
@@ -76,10 +76,9 @@ python -m script.dataload.src.main all
 
 | Comando | Ação |
 |---------|------|
-| `init` | aplica as migrations (script SQL) no PostgreSQL |
 | `seed-sql` | gera e insere os dados no PostgreSQL |
 | `seed-mongo` | gera e insere os documentos no MongoDB |
-| `all` | `init` + `seed-sql` + `seed-mongo` |
+| `all` | `seed-sql` + `seed-mongo` |
 
 ## O que é inserido
 
