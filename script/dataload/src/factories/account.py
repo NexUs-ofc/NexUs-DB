@@ -60,6 +60,6 @@ def build_profile_phones() -> list[ProfilePhone]:
         for _ in range(random.randint(1, 2)):
             result.append(ProfilePhone(
                 profile_id=pid,
-                phone=fake.unique.msisdn(),
+                phone=f"+{fake.unique.msisdn()}",
             ))
     return result

@@ -1,3 +1,9 @@
+CREATE TYPE profile_type_enum AS ENUM ('HOUSEHOLD', 'ADMIN', 'COMPANY', 'STORE');
+CREATE TYPE unit_of_measure_enum AS ENUM ('g', 'kg', 'ml', 'l', 'unit');
+CREATE TYPE payment_status_enum AS ENUM ('PENDING', 'PAID', 'OVERDUE', 'CANCELLED');
+CREATE TYPE profile_status_enum AS ENUM ('ACTIVE', 'INACTIVE', 'BLOCKED');
+CREATE TYPE auth_provider_enum AS ENUM ('GOOGLE', 'MICROSOFT', 'PASSWORD');
+
 CREATE TABLE category (
     id SERIAL PRIMARY KEY,
     category_name VARCHAR(100) NOT NULL UNIQUE
@@ -36,7 +42,7 @@ CREATE TABLE profile (
 
 CREATE TABLE profile_phone (
     profile_id INTEGER NOT NULL REFERENCES profile(id) ON DELETE CASCADE,
-    phone VARCHAR(16) NOT NULL,
+    phone VARCHAR(16) NOT NULL CHECK (phone ~ '^\+[1-9][0-9]{7,14}$'),
     CONSTRAINT pk_profile_phone PRIMARY KEY (profile_id, phone)
 );
 
@@ -51,7 +57,7 @@ CREATE TABLE auth_method (
 
 CREATE UNIQUE INDEX uq_external_auth_identity
     ON auth_method (provider, credential)
-    WHERE provider = 'GOOGLE';
+    WHERE provider IN ('GOOGLE', 'MICROSOFT');
 
 CREATE TABLE pantry_item (
     id SERIAL PRIMARY KEY,
@@ -111,3 +117,59 @@ CREATE TABLE payment (
     paid_at TIMESTAMP,
     CONSTRAINT ck_payment_billing_period CHECK (billing_period_end >= billing_period_start)
 );
+
+CREATE OR REPLACE FUNCTION validate_profile_reference_type() RETURNS TRIGGER AS $$
+DECLARE
+    actual_type profile_type_enum;
+    expected_type profile_type_enum;
+BEGIN
+    SELECT type
+      INTO actual_type
+      FROM profile
+     WHERE id = NEW.profile_id;
+
+    IF actual_type IS NULL THEN
+        RAISE EXCEPTION 'profile % does not exist', NEW.profile_id;
+    END IF;
+
+    expected_type := TG_ARGV[0]::profile_type_enum;
+
+    IF actual_type <> expected_type THEN
+        RAISE EXCEPTION
+            'profile_id must reference a profile of type %, received %',
+            expected_type,
+            actual_type;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_pantry_household_type
+    BEFORE INSERT OR UPDATE OF profile_id ON pantry_item
+    FOR EACH ROW EXECUTE FUNCTION validate_profile_reference_type('HOUSEHOLD');
+
+CREATE TRIGGER trg_pantry_product_setting_household_type
+    BEFORE INSERT OR UPDATE OF profile_id ON pantry_product_setting
+    FOR EACH ROW EXECUTE FUNCTION validate_profile_reference_type('HOUSEHOLD');
+
+CREATE TRIGGER trg_company_profile_type
+    BEFORE INSERT OR UPDATE OF profile_id ON company
+    FOR EACH ROW EXECUTE FUNCTION validate_profile_reference_type('COMPANY');
+
+CREATE TRIGGER trg_store_profile_type
+    BEFORE INSERT OR UPDATE OF profile_id ON store
+    FOR EACH ROW EXECUTE FUNCTION validate_profile_reference_type('STORE');
+
+CREATE OR REPLACE FUNCTION prevent_profile_type_change() RETURNS TRIGGER AS $$
+BEGIN
+    IF OLD.type IS DISTINCT FROM NEW.type THEN
+        RAISE EXCEPTION 'profile type cannot be changed after creation';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_profile_type_lock
+    BEFORE UPDATE ON profile
+    FOR EACH ROW EXECUTE FUNCTION prevent_profile_type_change();
