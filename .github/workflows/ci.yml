@@ -50,16 +50,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Run Flyway migrations
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Create .env
         run: |
-          docker run --rm --network host \
-            -v "$PWD/migrations:/flyway/sql" \
-            flyway/flyway:10 \
-            -url=jdbc:postgresql://localhost:5432/nexus_test \
-            -user=testuser \
-            -password=testpass \
-            -locations=filesystem:/flyway/sql \
-            migrate
+          echo "PG_HOST=localhost" >> .env
+          echo "PG_PORT=5432" >> .env
+          echo "PG_DATABASE=nexus_test" >> .env
+          echo "PG_USER=testuser" >> .env
+          echo "PG_PASSWORD=testpass" >> .env
+
+      - name: Run migrations
+        run: python -m script.dataload.src.main init
 
   validate-dataload:
     name: Validate Dataload
@@ -112,17 +120,6 @@ jobs:
           echo "PG_PASSWORD=testpass" >> .env
           echo "MONGO_URI=mongodb://localhost:27017" >> .env
           echo "MONGO_DB=nexus_test" >> .env
-
-      - name: Run Flyway migrations
-        run: |
-          docker run --rm --network host \
-            -v "$PWD/migrations:/flyway/sql" \
-            flyway/flyway:10 \
-            -url=jdbc:postgresql://localhost:5432/nexus_test \
-            -user=testuser \
-            -password=testpass \
-            -locations=filesystem:/flyway/sql \
-            migrate
 
       - name: Run dataload
         run: python -m script.dataload.src.main all
