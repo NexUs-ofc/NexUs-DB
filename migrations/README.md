@@ -13,41 +13,22 @@ migrations/
 └── V3__drop_not_null_constraint.sql # profile.address_id passa a aceitar NULL
 ```
 
-Esses 3 arquivos são os mesmos que já existiam (e já foram aplicados) no repositório
-`NexUs-Auth` — o schema é compartilhado entre os serviços do NexUs, então o contrato do
+O schema é compartilhado entre os serviços do NexUs, então o contrato do
 banco passa a viver aqui, e não em cada serviço individualmente.
 
 ## Aplicando as migrations
 
-Instale o [Flyway CLI](https://documentation.red-gate.com/fd/command-line-184127404.html)
-e rode a partir da raiz do repositório:
+Instale o [Flyway CLI](https://documentation.red-gate.com/fd/command-line-277579359.html).
+No Windows, rode o executável diretamente a partir da raiz do repositório; assim,
+não é necessário configurá-lo no `PATH`:
 
-```bash
-flyway -url=jdbc:postgresql://<host>:<port>/<database> \
-       -user=<usuario> \
-       -password=<senha> \
-       -locations=filesystem:migrations \
-       migrate
+```powershell
+& "$env:LOCALAPPDATA\Programs\Flyway\flyway-13.6.0\flyway.cmd" `
+  -url="jdbc:postgresql://<host>:<port>/<database>" `
+  -user="<usuario>" `
+  -password="<senha>" `
+  -locations="filesystem:migrations" migrate
 ```
-
-### Banco já existente (produção/QA)
-
-As 3 migrations acima **já foram executadas manualmente** nesses ambientes antes da
-adoção do Flyway. Rodar `migrate` direto falharia (as tabelas já existem). Nesse caso,
-faça o baseline primeiro — uma única vez, por ambiente — para o Flyway marcar essas 3
-versões como já aplicadas sem tentar reexecutá-las:
-
-```bash
-flyway -url=jdbc:postgresql://<host>:<port>/<database> \
-       -user=<usuario> \
-       -password=<senha> \
-       -locations=filesystem:migrations \
-       -baselineVersion=3 \
-       baseline
-```
-
-A partir daí, `flyway migrate` funciona normalmente para qualquer migration `V4__` em
-diante.
 
 ### Banco novo (ambiente local/CI)
 
