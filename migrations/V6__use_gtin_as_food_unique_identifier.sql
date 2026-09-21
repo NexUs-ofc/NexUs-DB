@@ -1,0 +1,2 @@
+ALTER TABLE food
+    DROP CONSTRAINT uq_food;
