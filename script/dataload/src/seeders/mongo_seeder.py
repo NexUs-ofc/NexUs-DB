@@ -21,8 +21,11 @@ COLLECTIONS = {
 }
 
 
-def run(mongo):
+def run(mongo, *, reset: bool = False):
     for name, builder in COLLECTIONS.items():
-        if name in DROP_ALLOWED:
+        documents = builder()
+
+        if reset or name in DROP_ALLOWED:
             mongo.drop_collection(name)
-        mongo.bulk_insert(name, builder())
+
+        mongo.bulk_insert(name, documents)

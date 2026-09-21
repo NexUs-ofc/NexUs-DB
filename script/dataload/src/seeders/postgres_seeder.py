@@ -4,8 +4,11 @@ from ..factories.base import to_dicts
 from ..seed import get_all_fixed
 
 
-def run(pg):
+def run(pg, *, reset: bool = False):
     try:
+        if reset:
+            pg.reset_seed_data()
+
         fixed = get_all_fixed()
         pg.bulk_insert("category", fixed["category"])
         pg.bulk_insert("plan", fixed["plan"])

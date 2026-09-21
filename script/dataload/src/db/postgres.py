@@ -29,6 +29,26 @@ class PostgresConnection:
         with self.conn.cursor() as cur:
             execute_values(cur, query, values)
 
+    def reset_seed_data(self):
+        query = """
+            TRUNCATE TABLE
+                pantry_product_setting,
+                pantry_item,
+                payment,
+                store,
+                company,
+                auth_method,
+                profile_phone,
+                profile,
+                food,
+                address,
+                plan,
+                category
+            RESTART IDENTITY CASCADE;
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(query)
+
     def commit(self):
         self.conn.commit()
 
