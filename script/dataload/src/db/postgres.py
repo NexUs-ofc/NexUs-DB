@@ -28,7 +28,12 @@ class PostgresConnection:
         values = [tuple(row.get(col) for col in cols) for row in rows]
         with self.conn.cursor() as cur:
             execute_values(cur, query, values)
+
+    def commit(self):
         self.conn.commit()
+
+    def rollback(self):
+        self.conn.rollback()
 
     def close(self):
         if self.conn:

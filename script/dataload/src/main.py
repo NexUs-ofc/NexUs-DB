@@ -7,15 +7,19 @@ from .seeders import mongo_seeder, postgres_seeder
 
 def seed_sql():
     pg = PostgresConnection()
-    postgres_seeder.run(pg)
-    pg.close()
+    try:
+        postgres_seeder.run(pg)
+    finally:
+        pg.close()
     print("[OK] PostgreSQL populado.")
 
 
 def seed_mongo():
     mongo = MongoConnection()
-    mongo_seeder.run(mongo)
-    mongo.close()
+    try:
+        mongo_seeder.run(mongo)
+    finally:
+        mongo.close()
     print("[OK] MongoDB populado.")
 
 
