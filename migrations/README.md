@@ -9,8 +9,11 @@ aqui, só os arquivos de migration e o CLI para aplicá-los).
 ```
 migrations/
 ├── V1__initial_schema.sql          # schema inicial completo (enums, tabelas, triggers)
-├── V2__remove_microsoft_auth.sql   # remove MICROSOFT de auth_provider_enum
-└── V3__drop_not_null_constraint.sql # profile.address_id passa a aceitar NULL
+├── V2__remove_microsoft_auth.sql    # remove MICROSOFT de auth_provider_enum
+├── V3__drop_not_null_constraint.sql # profile.address_id passa a aceitar NULL
+├── V4__add_geolocation_to_address.sql # adiciona latitude e longitude a address
+├── V5__add_gtin_to_food.sql         # adiciona GTIN único a food
+└── V6__use_gtin_as_food_unique_identifier.sql # remove a unicidade por dados descritivos
 ```
 
 O schema é compartilhado entre os serviços do NexUs, então o contrato do
@@ -33,9 +36,9 @@ não é necessário configurá-lo no `PATH`:
 ### Banco novo (ambiente local/CI)
 
 Sem schema prévio, basta rodar `migrate` diretamente — o Flyway cria a tabela de
-histórico (`flyway_schema_history`) e aplica V1, V2 e V3 em sequência.
+histórico (`flyway_schema_history`) e aplica todas as migrations em sequência.
 
 ## Próximas migrations
 
-Novas mudanças de schema devem ser adicionadas como `V4__descricao.sql`,
-`V5__descricao.sql` etc., nunca alterando os arquivos já aplicados.
+Novas mudanças de schema devem ser adicionadas com a próxima versão disponível,
+nunca alterando os arquivos já aplicados.
