@@ -23,12 +23,9 @@ class PostgresConnection:
     def bulk_insert(self, table_name: str, rows: list[dict]):
         if not rows:
             return
-        cols = rows[0].keys()
+        cols = list(dict.fromkeys(col for row in rows for col in row))
         query = f"INSERT INTO {table_name} ({', '.join(cols)}) VALUES %s"
-        values = []
-        for r in rows:
-            linhas = tuple(r[col] for col in cols)
-            values.append(linhas)
+        values = [tuple(row.get(col) for col in cols) for row in rows]
         with self.conn.cursor() as cur:
             execute_values(cur, query, values)
         self.conn.commit()
