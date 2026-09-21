@@ -117,18 +117,20 @@ A carga do PostgreSQL ocorre em uma única transação. Se qualquer inserção f
 
 | Collection | Carga normal | Com `--reset` |
 |------------|--------------|---------------|
-| `MONGO_metrics` | recria | recria |
-| `MONGO_records` | recria | recria |
-| `MONGO_tool_metrics` | recria | recria |
-| `MONGO_traces` | recria | recria |
-| `MONGO_recipes` | insere | recria |
-| `MONGO_events` | insere | recria |
-| `MONGO_recipe_accounts` | insere | recria |
-| `MONGO_conversations` | insere | recria |
-| `MONGO_knowledge` | insere | recria |
-| `MONGO_shopping_lists` | insere | recria |
+| `metrics` | recria | recria |
+| `records` | recria | recria |
+| `tool_metrics` | recria | recria |
+| `traces` | recria | recria |
+| `recipes` | insere | recria |
+| `events` | insere | recria |
+| `recipe_accounts` | insere | recria |
+| `conversations` | insere | recria |
+| `knowledge` | insere | recria |
+| `shopping_lists` | insere | recria |
 
-Use `--reset` para repetir a carga completa. `MONGO_recipes` e `MONGO_events` possuem `_id` determinístico e não podem ser inseridas novamente sem a limpeza anterior.
+Use `--reset` para repetir a carga completa. `recipes` e `events` possuem `_id` determinístico e não podem ser inseridas novamente sem a limpeza anterior.
+
+Durante o reset, collections legadas com o prefixo `MONGO_` também são removidas.
 
 ## Dados determinísticos
 

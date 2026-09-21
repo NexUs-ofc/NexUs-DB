@@ -1,27 +1,33 @@
 from ..factories import home
 
+LEGACY_COLLECTION_PREFIX = "MONGO_"
+
 DROP_ALLOWED = {
-    "MONGO_metrics",
-    "MONGO_records",
-    "MONGO_tool_metrics",
-    "MONGO_traces",
+    "metrics",
+    "records",
+    "tool_metrics",
+    "traces",
 }
 
 COLLECTIONS = {
-    "MONGO_recipes": home.build_recipes,
-    "MONGO_events": home.build_events,
-    "MONGO_recipe_accounts": home.build_recipe_accounts,
-    "MONGO_conversations": home.build_conversations,
-    "MONGO_knowledge": home.build_knowledge,
-    "MONGO_records": home.build_records,
-    "MONGO_shopping_lists": home.build_shopping_lists,
-    "MONGO_metrics": home.build_metrics,
-    "MONGO_tool_metrics": home.build_tool_metrics,
-    "MONGO_traces": home.build_traces,
+    "recipes": home.build_recipes,
+    "events": home.build_events,
+    "recipe_accounts": home.build_recipe_accounts,
+    "conversations": home.build_conversations,
+    "knowledge": home.build_knowledge,
+    "records": home.build_records,
+    "shopping_lists": home.build_shopping_lists,
+    "metrics": home.build_metrics,
+    "tool_metrics": home.build_tool_metrics,
+    "traces": home.build_traces,
 }
 
 
 def run(mongo, *, reset: bool = False):
+    if reset:
+        for name in COLLECTIONS:
+            mongo.drop_collection(f"{LEGACY_COLLECTION_PREFIX}{name}")
+
     for name, builder in COLLECTIONS.items():
         documents = builder()
 
