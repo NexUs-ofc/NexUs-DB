@@ -33,7 +33,7 @@ def build_profiles() -> list[Profile]:
         ))
     for _ in range(len(RANGES["admin"])):
         profiles.append(Profile(
-            address_id=random.randint(1, TAMANHOS["address"]),
+            address_id=None,
             email=fake.unique.email(),
             name=fake.name(),
             type="ADMIN",
