@@ -8,12 +8,16 @@ fake = get_faker()
 def build_addresses() -> list[Address]:
     result = []
     for _ in range(TAMANHOS["address"]):
-        result.append(Address(
-            neighborhood=fake.neighborhood(),
-            street=fake.street_name(),
-            number=fake.building_number(),
-            cep=fake.postcode().replace('-', '').replace('.', ''),
-            city=fake.city(),
-            state=fake.state_abbr().upper(),
-        ))
+        result.append(
+            Address(
+                neighborhood=fake.neighborhood(),
+                street=fake.street_name(),
+                number=fake.building_number(),
+                cep=fake.postcode().replace("-", "").replace(".", ""),
+                city=fake.city(),
+                state=fake.state_abbr().upper(),
+                latitude=fake.latitude(),
+                longitude=fake.longitude(),
+            )
+        )
     return result
