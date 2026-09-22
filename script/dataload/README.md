@@ -12,7 +12,7 @@ dataload/
 │   ├── seed.py              # dados fixos: categories, plans, food_names
 │   ├── core/
 │   │   ├── ids.py           # quantidades e ranges de IDs fixos
-│   │   ├── mongo_ids.py     # ObjectIds determinísticos do Mongo
+│   │   ├── mongo_ids.py     # ObjectIds gerados para cada carga do Mongo
 │   │   ├── rng.py           # Faker com seed fixo (+ FoodProvider)
 │   │   └── schemas/         # dataclasses das entidades (com to_dict)
 │   ├── factories/           # gera os dados (objetos/dicts)
@@ -60,7 +60,7 @@ PG_PASSWORD=postgres
 MONGO_URI=mongodb://localhost:27017
 MONGO_DB=nexus
 
-# Permite apagar e recriar os dados locais com --reset
+# Permite reiniciar os dados SQL locais com --reset
 DATALOAD_ALLOW_RESET=false
 ```
 
@@ -86,7 +86,7 @@ python -m script.dataload.src.main all --reset
 
 ### Recriando os dados locais
 
-Para apagar os dados controlados pelo dataload, reiniciar os IDs do PostgreSQL e recriar as collections do MongoDB:
+Para apagar os dados controlados pelo dataload e reiniciar os IDs do PostgreSQL:
 
 ```env
 DATALOAD_ALLOW_RESET=true
@@ -96,7 +96,7 @@ DATALOAD_ALLOW_RESET=true
 python -m script.dataload.src.main all --reset
 ```
 
-O modo `--reset` é destrutivo e deve ser habilitado somente em ambientes locais ou de teste. Sem `DATALOAD_ALLOW_RESET=true`, o comando é recusado.
+O modo `--reset` é destrutivo para o PostgreSQL e deve ser habilitado somente em ambientes locais ou de teste. No MongoDB, somente `metrics`, `records`, `tool_metrics` e `traces` são recriadas. Sem `DATALOAD_ALLOW_RESET=true`, o comando é recusado.
 
 ## O que é inserido
 
@@ -121,21 +121,21 @@ A carga do PostgreSQL ocorre em uma única transação. Se qualquer inserção f
 | `records` | recria | recria |
 | `tool_metrics` | recria | recria |
 | `traces` | recria | recria |
-| `recipes` | insere | recria |
-| `events` | insere | recria |
-| `recipe_accounts` | insere | recria |
-| `conversations` | insere | recria |
-| `knowledge` | insere | recria |
-| `shopping_lists` | insere | recria |
+| `recipes` | insere | insere |
+| `events` | insere | insere |
+| `recipe_accounts` | insere | insere |
+| `conversations` | insere | insere |
+| `knowledge` | insere | insere |
+| `shopping_lists` | insere | insere |
 
-Use `--reset` para repetir a carga completa. `recipes` e `events` possuem `_id` determinístico e não podem ser inseridas novamente sem a limpeza anterior.
+`recipes` e `events` recebem novos ObjectIds em cada execução. Assim, novos documentos podem ser inseridos sem apagar os existentes, e as referências criadas na mesma carga permanecem consistentes.
 
-Durante o reset, collections legadas com o prefixo `MONGO_` também são removidas.
+Durante o reset, somente as collections legadas autorizadas com o prefixo `MONGO_` são removidas.
 
 ## Dados determinísticos
 
 - `SEED` em `config.py` + `Faker.seed(SEED)` fazem os dados repetirem a cada execução.
-- Os ObjectIds do Mongo (`RECIPE_OIDS`, `EVENT_OIDS` em `core/mongo_ids.py`) também são fixos, então `events`, `shopping_lists` e `knowledge` referenciam sempre as mesmas receitas/eventos.
+- Os ObjectIds do Mongo são renovados em cada execução para permitir inserções incrementais. Dentro da mesma carga, `events`, `shopping_lists` e `knowledge` usam os IDs recém-gerados.
 
 ## Quantidades (TAMANHOS)
 

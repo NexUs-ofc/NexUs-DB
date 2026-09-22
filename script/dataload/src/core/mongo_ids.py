@@ -2,5 +2,13 @@ from bson import ObjectId
 
 from ..config import TAMANHOS
 
-RECIPE_OIDS = [ObjectId(f"{i:024x}") for i in range(1, TAMANHOS["recipe"] + 1)]
-EVENT_OIDS = [ObjectId(f"{i:024x}") for i in range(1, TAMANHOS["event"] + 1)]
+RECIPE_OIDS: list[ObjectId] = []
+EVENT_OIDS: list[ObjectId] = []
+
+
+def regenerate_mongo_ids():
+    RECIPE_OIDS[:] = [ObjectId() for _ in range(TAMANHOS["recipe"])]
+    EVENT_OIDS[:] = [ObjectId() for _ in range(TAMANHOS["event"])]
+
+
+regenerate_mongo_ids()
