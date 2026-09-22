@@ -7,7 +7,7 @@ from .core.ids import TOTAL_PROFILES
 load_dotenv()
 
 TAMANHOS = {
-    "categoria": 8,
+    "categoria": 17,
     "food": 40,
     "address": 50,
     "profile": TOTAL_PROFILES,

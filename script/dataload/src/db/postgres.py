@@ -28,7 +28,32 @@ class PostgresConnection:
         values = [tuple(row.get(col) for col in cols) for row in rows]
         with self.conn.cursor() as cur:
             execute_values(cur, query, values)
+
+    def reset_seed_data(self):
+        query = """
+            TRUNCATE TABLE
+                pantry_product_setting,
+                pantry_item,
+                payment,
+                store,
+                company,
+                auth_method,
+                profile_phone,
+                profile,
+                food,
+                address,
+                plan,
+                category
+            RESTART IDENTITY CASCADE;
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(query)
+
+    def commit(self):
         self.conn.commit()
+
+    def rollback(self):
+        self.conn.rollback()
 
     def close(self):
         if self.conn:

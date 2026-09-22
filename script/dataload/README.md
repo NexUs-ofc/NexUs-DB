@@ -1,6 +1,6 @@
 # Dataload
 
-Carga de dados do NexUs-DB. Aplica o schema SQL no PostgreSQL e popula os dois bancos com dados fictícios. Os dados são determinísticos (seed fixo), então rodar de novo produz o mesmo resultado.
+Carga de dados do NexUs-DB. Popula o PostgreSQL e o MongoDB com dados fictícios após a aplicação das migrations. Os dados são determinísticos e podem ser recriados com o modo `--reset`.
 
 ## Estrutura
 
@@ -59,6 +59,9 @@ PG_PASSWORD=postgres
 # MongoDB
 MONGO_URI=mongodb://localhost:27017
 MONGO_DB=nexus
+
+# Permite apagar e recriar os dados locais com --reset
+DATALOAD_ALLOW_RESET=false
 ```
 
 O `config.py` chama `load_dotenv()`, que procura o `.env` no diretório de trabalho. Rode os comandos a partir de `NexUs-DB/`.
@@ -72,6 +75,7 @@ A partir da raiz `NexUs-DB/`:
 python -m script.dataload.src.main seed-sql
 python -m script.dataload.src.main seed-mongo
 python -m script.dataload.src.main all
+python -m script.dataload.src.main all --reset
 ```
 
 | Comando | Ação |
@@ -79,6 +83,20 @@ python -m script.dataload.src.main all
 | `seed-sql` | gera e insere os dados no PostgreSQL |
 | `seed-mongo` | gera e insere os documentos no MongoDB |
 | `all` | `seed-sql` + `seed-mongo` |
+
+### Recriando os dados locais
+
+Para apagar os dados controlados pelo dataload, reiniciar os IDs do PostgreSQL e recriar as collections do MongoDB:
+
+```env
+DATALOAD_ALLOW_RESET=true
+```
+
+```bash
+python -m script.dataload.src.main all --reset
+```
+
+O modo `--reset` é destrutivo e deve ser habilitado somente em ambientes locais ou de teste. Sem `DATALOAD_ALLOW_RESET=true`, o comando é recusado.
 
 ## O que é inserido
 
@@ -93,22 +111,26 @@ Ordem de inserção (seguindo as chaves estrangeiras):
 5. `company`, `store`, `payment`
 6. `pantry_item`, `pantry_product_setting`
 
+A carga do PostgreSQL ocorre em uma única transação. Se qualquer inserção falhar, todas as alterações da execução são revertidas.
+
 ### MongoDB
 
-| Collection | Drop antes do insert? |
-|------------|------------------------|
-| `MONGO_metrics` | sim |
-| `MONGO_records` | sim |
-| `MONGO_tool_metrics` | sim |
-| `MONGO_traces` | sim |
-| `MONGO_recipes` | não |
-| `MONGO_events` | não |
-| `MONGO_recipe_accounts` | não |
-| `MONGO_conversations` | não |
-| `MONGO_knowledge` | não |
-| `MONGO_shopping_lists` | não |
+| Collection | Carga normal | Com `--reset` |
+|------------|--------------|---------------|
+| `metrics` | recria | recria |
+| `records` | recria | recria |
+| `tool_metrics` | recria | recria |
+| `traces` | recria | recria |
+| `recipes` | insere | recria |
+| `events` | insere | recria |
+| `recipe_accounts` | insere | recria |
+| `conversations` | insere | recria |
+| `knowledge` | insere | recria |
+| `shopping_lists` | insere | recria |
 
-As collections sem drop não apagam o que já existe; só acumulam os novos documentos a cada execução. Isso vale para: recipes, events, recipe_accounts, conversations, knowledge e shopping_lists.
+Use `--reset` para repetir a carga completa. `recipes` e `events` possuem `_id` determinístico e não podem ser inseridas novamente sem a limpeza anterior.
+
+Durante o reset, collections legadas com o prefixo `MONGO_` também são removidas.
 
 ## Dados determinísticos
 
