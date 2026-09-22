@@ -1,3 +1,4 @@
+from ..core.mongo_ids import regenerate_mongo_ids
 from ..factories import home
 
 LEGACY_COLLECTION_PREFIX = "MONGO_"
@@ -24,14 +25,16 @@ COLLECTIONS = {
 
 
 def run(mongo, *, reset: bool = False):
+    regenerate_mongo_ids()
+
     if reset:
-        for name in COLLECTIONS:
+        for name in DROP_ALLOWED:
             mongo.drop_collection(f"{LEGACY_COLLECTION_PREFIX}{name}")
 
     for name, builder in COLLECTIONS.items():
         documents = builder()
 
-        if reset or name in DROP_ALLOWED:
+        if name in DROP_ALLOWED:
             mongo.drop_collection(name)
 
         mongo.bulk_insert(name, documents)

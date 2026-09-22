@@ -30,7 +30,7 @@ def main():
     parser.add_argument(
         "--reset",
         action="store_true",
-        help="Apaga os dados do dataload e reinicia os IDs antes da carga.",
+        help="Reinicia os dados SQL e as collections Mongo autorizadas.",
     )
     args = parser.parse_args()
 
