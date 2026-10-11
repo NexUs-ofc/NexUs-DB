@@ -42,7 +42,7 @@ pip install -r requirements.txt
 
 Dependências: `psycopg2-binary`, `pymongo`, `faker`, `faker_food`, `python-dotenv`.
 
-Requer Python 3.10+ (usa `@dataclass(kw_only=True)`).
+Requer Python 3.11+ (usa `datetime.UTC` e `@dataclass(kw_only=True)`).
 
 ## Configuração (.env)
 

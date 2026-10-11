@@ -1,5 +1,5 @@
 import random
-from datetime import timezone
+from datetime import UTC
 
 from bson import ObjectId
 
@@ -184,9 +184,9 @@ def build_notifications() -> list[dict]:
             if notification_type == "PRODUCT_EXPIRING"
             else str(random.choice(EVENT_OIDS))
         )
-        created_at = fake.date_time_this_year(tzinfo=timezone.utc)
+        created_at = fake.date_time_this_year(tzinfo=UTC)
         read_at = (
-            fake.date_time_between(start_date=created_at, end_date="now", tzinfo=timezone.utc)
+            fake.date_time_between(start_date=created_at, end_date="now", tzinfo=UTC)
             if fake.boolean()
             else None
         )
