@@ -18,6 +18,7 @@ COLLECTIONS = {
     "knowledge": home.build_knowledge,
     "records": home.build_records,
     "shopping_lists": home.build_shopping_lists,
+    "notifications": home.build_notifications,
     "metrics": home.build_metrics,
     "tool_metrics": home.build_tool_metrics,
     "traces": home.build_traces,

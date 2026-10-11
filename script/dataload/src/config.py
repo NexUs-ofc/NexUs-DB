@@ -24,6 +24,7 @@ TAMANHOS = {
     "conversation": 40,
     "knowledge": 30,
     "record": 60,
+    "notification": 40,
     "shopping_list": 40,
     "metric": 20,
     "tool_metric": 30,
