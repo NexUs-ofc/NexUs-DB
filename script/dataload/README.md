@@ -127,10 +127,33 @@ A carga do PostgreSQL ocorre em uma única transação. Se qualquer inserção f
 | `conversations` | insere | insere |
 | `knowledge` | insere | insere |
 | `shopping_lists` | insere | insere |
+| `notifications` | insere | insere |
 
 `recipes` e `events` recebem novos ObjectIds em cada execução. Assim, novos documentos podem ser inseridos sem apagar os existentes, e as referências criadas na mesma carga permanecem consistentes.
 
 Durante o reset, somente as collections legadas autorizadas com o prefixo `MONGO_` são removidas.
+
+### Notificações
+
+A collection `notifications` usa os mesmos campos do domínio `Notification` do NexUs-Notify:
+
+| Campo | Tipo no MongoDB | Descrição |
+|-------|-----------------|-----------|
+| `_id` | ObjectId | Identificador gerado automaticamente pelo MongoDB. |
+| `profile_id` | int | ID do profile destinatário da notificação. |
+| `type` | string | Tipo: `PRODUCT_EXPIRING` ou `UPCOMING_EVENT`. |
+| `source_id` | string | Identificador de exemplo do item da despensa ou ObjectId do evento convertido para string. |
+| `alert_key` | string | Identifica o alerta para evitar notificações repetidas para o mesmo profile, tipo e origem. |
+| `title` | string | Título da notificação. |
+| `message` | string | Mensagem da notificação. |
+| `created_at` | date | Data de criação em UTC. |
+| `read_at` | date ou null | Data da primeira leitura; `null` indica uma notificação não lida. |
+
+A carga gera 40 notificações com os dois tipos e exemplos lidos e não lidos. Cada execução usa chaves `seed:<ObjectId da carga>:<posição>` para permitir inserções incrementais sem conflito no índice único de alertas. Essas chaves são exemplos do dataload; as regras de geração do Notify definem as chaves dos alertas reais.
+
+Cada execução insere novas notificações sem apagar as existentes, inclusive com `--reset`. A referência `profile_id` usa os IDs de household da carga SQL; o MongoDB não aplica chave estrangeira para o PostgreSQL. Os IDs numéricos de itens são exemplos e não garantem associação com um item de uma carga SQL anterior.
+
+O Notify calcula o estado de leitura a partir de `read_at`, sem persistir `is_read` ou `priority`. O serviço define um índice único em `(profile_id, type, source_id, alert_key)` e um índice em `(profile_id, created_at DESC)`.
 
 ## Dados determinísticos
 
@@ -152,6 +175,7 @@ Durante o reset, somente as collections legadas autorizadas com o prefixo `MONGO
 | knowledge | 30 |
 | record | 60 |
 | shopping_list | 40 |
+| notification | 40 |
 | metric / tool_metric / trace | 20 / 30 / 20 |
 
 As quantidades ficam em `src/config.py` (dict `TAMANHOS`).

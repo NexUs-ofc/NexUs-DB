@@ -1,4 +1,7 @@
 import random
+from datetime import timezone
+
+from bson import ObjectId
 
 from ..config import TAMANHOS
 from ..core.ids import RANGES
@@ -169,6 +172,35 @@ def build_shopping_lists() -> list[dict]:
         }
         for _ in range(TAMANHOS["shopping_list"])
     ]
+
+
+def build_notifications() -> list[dict]:
+    batch_id = ObjectId()
+    documents = []
+    for index in range(TAMANHOS["notification"]):
+        notification_type = fake.random_element(elements=["PRODUCT_EXPIRING", "UPCOMING_EVENT"])
+        source_id = (
+            str(random.randint(1, TAMANHOS["pantry_item"]))
+            if notification_type == "PRODUCT_EXPIRING"
+            else str(random.choice(EVENT_OIDS))
+        )
+        created_at = fake.date_time_this_year(tzinfo=timezone.utc)
+        read_at = (
+            fake.date_time_between(start_date=created_at, end_date="now", tzinfo=timezone.utc)
+            if fake.boolean()
+            else None
+        )
+        documents.append({
+            "profile_id": _household_id(),
+            "type": notification_type,
+            "source_id": source_id,
+            "alert_key": f"seed:{batch_id}:{index}",
+            "title": fake.sentence(nb_words=4),
+            "message": fake.paragraph(nb_sentences=3),
+            "created_at": created_at,
+            "read_at": read_at,
+        })
+    return documents
 
 
 def build_metrics() -> list[dict]:
