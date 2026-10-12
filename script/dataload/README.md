@@ -132,6 +132,51 @@ A carga do PostgreSQL ocorre em uma única transação. Se qualquer inserção f
 
 Durante o reset, somente as collections legadas autorizadas com o prefixo `MONGO_` são removidas.
 
+## Perfil BI
+
+Acrescenta ~12 meses de uso simulado **no mesmo banco do app**, **somente no PostgreSQL**
+(não grava nada no MongoDB), com ~500 registros verossímeis por tabela e variação
+suficiente para os KPIs de desperdício D1–D9 do star schema.
+
+```
+python -m script.dataload.src.main all --perfil bi
+```
+
+Depois rode `script/03_bi_views/datamart_estrela.sql` no pgAdmin para recriar as views.
+
+- Não apaga dados do app: cada execução remove e recria só os próprios dados
+  (perfis com e-mail `@bi.nexus.local`, em cascata). Também remove o catálogo de execuções
+  anteriores do BI que não estiver em uso.
+- IDs vêm das sequences do banco, então não conflitam com o que o app grava.
+- O histórico de consumo/descarte (`item_consumed` / `item_expired`) fica em
+  `bi_hist.registro_estoque` (criada pelo próprio dataload). Ele alimenta D1 e D9.
+
+| Tabela | Registros | Como é gerado |
+|---|---|---|
+| `food` | 520 | 70 produtos × marcas × embalagens, EAN-13 válido (prefixo `78991`) |
+| `address` / `profile` | 520 | 380 households, 55 empresas, 85 lojas em 60 cidades das 27 UFs |
+| `profile_phone` | ~560 | celular com DDD da UF + fixo para parte dos perfis |
+| `auth_method` | ~545 | Google/senha; alguns vinculam os dois |
+| `payment` | ~565 | mensalidades desde o cadastro; bons e maus pagadores |
+| `pantry_item` | 520 | o que está hoje na despensa (inclui vencidos esquecidos e itens sem validade) |
+| `pantry_product_setting` | 520 | mínimos configurados para o que a casa tem; parte fica abaixo |
+| `bi_hist.registro_estoque` | 520 | itens consumidos ou descartados nos últimos 12 meses |
+| `company` / `store` | 55 / 85 | cada uma também é um profile, então dividem os 520 com os households |
+| `category` / `plan` | 17 / 3 | tabelas de domínio fixas |
+
+A simulação gera mais eventos e reduz `pantry_item`, `pantry_product_setting` e o histórico
+por amostra aleatória até `ALVO` (520), o que preserva as proporções dos KPIs.
+Para mudar o volume, altere `ALVO` e `VOL` em `src/bi.py`.
+
+Variação simulada:
+- Desperdício por categoria (`DESPERDICIO`: FLV e padaria vencem mais; enlatados e grãos quase nunca),
+  por região (`DESPERDICIO_REGIAO`: maior no Norte, menor no Sul), por household (descuido individual,
+  quem mora sozinho desperdiça mais) e ao longo do tempo (quem usa o app há mais meses desperdiça menos).
+- Itens sem validade (`SEM_VALIDADE`): hortifrúti a granel, pão francês etc.
+- Preferência de categorias por região (`PREFERENCIA_REGIAO`) e tamanho da casa (1 a 6 moradores).
+- Opcional: `BI_DATA_REF=AAAA-MM-DD` fixa a "data de hoje" da simulação.
+- Código: `src/bi.py`.
+
 ## Dados determinísticos
 
 - `SEED` em `config.py` + `Faker.seed(SEED)` fazem os dados repetirem a cada execução.
