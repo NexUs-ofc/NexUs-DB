@@ -27,7 +27,7 @@ dataload/
 │   │   ├── postgres_seeder.py
 │   │   └── mongo_seeder.py
 │   └── db/                  # conexões
-│       ├── postgres.py
+│       ├── postgres.py      # inclui register_daily_activity() (DAU)
 │       ├── mongo.py
 │       └── migration.py
 ```
@@ -76,6 +76,7 @@ python -m script.dataload.src.main seed-sql
 python -m script.dataload.src.main seed-mongo
 python -m script.dataload.src.main all
 python -m script.dataload.src.main all --reset
+python -m script.dataload.src.main register-dau --profile-id 1
 ```
 
 | Comando | Ação |
@@ -83,6 +84,7 @@ python -m script.dataload.src.main all --reset
 | `seed-sql` | gera e insere os dados no PostgreSQL |
 | `seed-mongo` | gera e insere os documentos no MongoDB |
 | `all` | `seed-sql` + `seed-mongo` |
+| `register-dau --profile-id N` | registra o acesso do profile `N` no DAU de hoje (requer `script/04_monitoramento/script_dau.sql` aplicado) |
 
 ### Recriando os dados locais
 
@@ -95,6 +97,8 @@ DATALOAD_ALLOW_RESET=true
 ```bash
 python -m script.dataload.src.main all --reset
 ```
+
+O `--reset` também limpa `daily_active_users` (via `TRUNCATE ... CASCADE` em `profile`), se a tabela existir.
 
 O modo `--reset` é destrutivo para o PostgreSQL e deve ser habilitado somente em ambientes locais ou de teste. No MongoDB, somente `metrics`, `records`, `tool_metrics` e `traces` são recriadas. Sem `DATALOAD_ALLOW_RESET=true`, o comando é recusado.
 

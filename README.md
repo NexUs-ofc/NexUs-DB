@@ -11,14 +11,14 @@ O repositório tem quatro frentes:
 - **Schema SQL** — DDL, enums, funções e triggers do PostgreSQL, versionado com Flyway sob `migrations/`.
 - **Dataload** — popula dados fictícios no PostgreSQL e no MongoDB (`script/dataload`), assumindo o schema já aplicado.
 - **Catálogo de metadados** — o que cada tabela, coluna e collection significa, com tipo, chaves e classificação LGPD (`script/05_catalogo/` e `doc/catalogo/`).
-- **Auxiliares** — views de BI, scripts de monitoramento e placeholders para trabalhos futuros.
+- **Auxiliares** — views de BI, monitoramento de DAU e placeholders para trabalhos futuros.
 
 ```
 NexUs-DB/
 ├── migrations/                # migrations Flyway (schema versionado)
 ├── script/
 │   ├── 03_bi_views/          # data mart (star schema) para BI
-│   ├── 04_monitoramento/     # scripts de monitoramento
+│   ├── 04_monitoramento/     # monitoramento (DAU — Daily Active Users)
 │   ├── 05_catalogo/          # SQL do catálogo de metadados (schema catalogo)
 │   └── dataload/             # carga de dados (Postgres + Mongo)
 ├── doc/
@@ -101,6 +101,7 @@ manualmente).
 | `payment` | Pagamentos de planos |
 | `pantry_item` | Itens no estoque doméstico |
 | `pantry_product_setting` | Configuração de quantidade mínima por alimento |
+| `daily_active_users` | Usuários (profiles) ativos por dia — criada por `script/04_monitoramento/script_dau.sql`, fora do Flyway |
 
 ### Regras de negócio
 
@@ -108,6 +109,7 @@ As regras vivem em funções + triggers, não na camada de aplicação:
 
 - **`validate_profile_reference_type(tipo)`** — garante que `profile_id` de `pantry_item`, `pantry_product_setting`, `company` e `store` aponte para um profile do tipo esperado (`HOUSEHOLD`, `COMPANY`, `STORE`). Aplica via triggers de `BEFORE INSERT/UPDATE`.
 - **`prevent_profile_type_change()`** — impede que o `type` de um profile seja alterado depois de criado.
+- **`register_daily_activity(user_id)`** — registra o acesso/login do usuário no DAU do dia com `INSERT ... ON CONFLICT DO NOTHING` (uma linha por usuário por dia). Uso: `SELECT register_daily_activity(<profile_id>)`. Detalhes em [script/04_monitoramento/README.md](script/04_monitoramento/README.md).
 
 Nota sobre IDs: as tabelas usam `SERIAL PRIMARY KEY` (auto-incremento nativo do Postgres).
 
@@ -129,6 +131,7 @@ Comandos (rodar a partir da raiz `NexUs-DB/`, com o schema já aplicado via Flyw
 python -m script.dataload.src.main seed-sql    # popula o PostgreSQL
 python -m script.dataload.src.main seed-mongo  # popula o MongoDB
 python -m script.dataload.src.main all         # seed-sql + seed-mongo
+python -m script.dataload.src.main register-dau --profile-id 1  # registra acesso no DAU
 ```
 
 Configuração: o arquivo `.env` (na raiz) é carregado pelo dataload:
@@ -150,9 +153,9 @@ Detalhes de implementação do dataload (factories, seeders, collections do Mong
 
 - Crie um `.env` na raiz com as credenciais de PostgreSQL e MongoDB (o `.env` é o único arquivo ignorado no `.gitignore`).
 - Aplique o schema com Flyway (`migrations/`) antes de rodar o dataload.
+- Para a métrica de DAU, rode `script/04_monitoramento/script_dau.sql` no banco (manual, depois das migrations).
 
 ## Em andamento / placeholders
 
-- `script/04_monitoramento/script_dau.sql` — métrica de DAU, ainda sem conteúdo.
 - `rpa/` — vazio, aguardando trabalho.
 - `profile.dietary_restriction` — documentado no catálogo, ainda sem migration (próxima: V8).
