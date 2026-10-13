@@ -32,7 +32,25 @@ def main():
         action="store_true",
         help="Reinicia os dados SQL e as collections Mongo autorizadas.",
     )
+    parser.add_argument(
+        "--perfil", choices=["padrao", "bi"], default="padrao",
+        help="bi: acrescenta ~12 meses de uso simulado para BI (somente PostgreSQL).",
+    )
     args = parser.parse_args()
+
+    if args.perfil == "bi":
+        from .bi import executar
+
+        pg = PostgresConnection()
+        try:
+            executar(pg)
+        except Exception:
+            pg.rollback()
+            raise
+        finally:
+            pg.close()
+        print("[OK] Dados de BI carregados.")
+        return
 
     if args.reset and os.getenv("DATALOAD_ALLOW_RESET", "").lower() != "true":
         parser.error(
