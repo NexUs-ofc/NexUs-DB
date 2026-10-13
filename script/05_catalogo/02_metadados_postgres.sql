@@ -1,6 +1,6 @@
 -- =============================================================================
 -- NexUs — Catálogo de metadados (2/3): tabelas e views do PostgreSQL
--- Schema public (app), migrations V1-V7, e schemas bi e bi_hist (data mart).
+-- Schema catalogo, migrations V1-V7 + monitoramento (DAU), e schemas bi e bi_hist (data mart).
 -- Pode rodar de novo quando quiser: apaga e recarrega só os metadados do PostgreSQL.
 -- Requer 01_estrutura.sql já executado.
 -- =============================================================================
@@ -12,6 +12,8 @@ DELETE FROM catalogo.objeto WHERE banco = 'POSTGRESQL';  -- as colunas saem em c
 INSERT INTO catalogo.objeto (banco, schema_nome, objeto_nome, tipo_objeto, descricao) VALUES
     ('POSTGRESQL', 'public', 'address', 'TABELA', 'Endereços de households, empresas e lojas. Usado na análise regional (cidade, UF, região).'),
     ('POSTGRESQL', 'public', 'auth_method', 'TABELA', 'Formas de login do perfil: no máximo uma por provedor.'),
+    ('POSTGRESQL', 'public', 'daily_active_users', 'TABELA', 'Monitoramento (DAU): 1 linha por usuário (profile) ativo por dia. Alimentada por register_daily_activity(); criada por script/04_monitoramento/script_dau.sql, fora do Flyway.'),
+    ('POSTGRESQL', 'public', 'vw_dau', 'VIEW', 'Monitoramento: quantidade de usuários ativos (DAU) por dia.'),
     ('POSTGRESQL', 'public', 'category', 'TABELA', 'Domínio: categorias de alimentos (17 fixas, iguais às do supermercado).'),
     ('POSTGRESQL', 'public', 'company', 'TABELA', 'Empresa cliente (B2B). Cada empresa é também um perfil COMPANY.'),
     ('POSTGRESQL', 'public', 'food', 'TABELA', 'Catálogo de alimentos (SKU): produto + marca + embalagem, identificado pelo GTIN.'),
@@ -94,6 +96,27 @@ CROSS JOIN (VALUES
     ('profile_id', 4, 'integer', FALSE, NULL, 'FK, UK', 'profile.id', 'INTERNO', 'Perfil COMPANY da empresa (FK profile.id, 1:1).')
 ) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
 WHERE o.banco = 'POSTGRESQL' AND o.schema_nome = 'public' AND o.objeto_nome = 'company';
+
+-- public.daily_active_users
+INSERT INTO catalogo.coluna (objeto_id, coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
+SELECT o.id, v.coluna_nome, v.posicao, v.tipo_dado, v.aceita_nulo, v.valor_padrao, v.chave, v.referencia, v.classificacao_lgpd, v.descricao
+FROM catalogo.objeto o
+CROSS JOIN (VALUES
+    ('activity_date', 1, 'date', FALSE, NULL, 'PK', NULL, 'INTERNO', 'Dia da atividade no fuso America/Sao_Paulo. PK composta (activity_date, user_id).'),
+    ('user_id', 2, 'integer', FALSE, NULL, 'PK, FK', 'profile.id', 'INTERNO', 'Usuário ativo no dia (FK profile.id, cascata).'),
+    ('first_seen_at', 3, 'timestamp without time zone', FALSE, 'CURRENT_TIMESTAMP', NULL, NULL, 'INTERNO', 'Momento do primeiro acesso/login do usuário no dia.')
+) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
+WHERE o.banco = 'POSTGRESQL' AND o.schema_nome = 'public' AND o.objeto_nome = 'daily_active_users';
+
+-- public.vw_dau
+INSERT INTO catalogo.coluna (objeto_id, coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
+SELECT o.id, v.coluna_nome, v.posicao, v.tipo_dado, v.aceita_nulo, v.valor_padrao, v.chave, v.referencia, v.classificacao_lgpd, v.descricao
+FROM catalogo.objeto o
+CROSS JOIN (VALUES
+    ('activity_date', 1, 'date', TRUE, NULL, NULL, NULL, 'INTERNO', 'Dia (fuso America/Sao_Paulo).'),
+    ('dau', 2, 'bigint', TRUE, NULL, NULL, NULL, 'INTERNO', 'Quantidade de usuários distintos ativos no dia.')
+) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
+WHERE o.banco = 'POSTGRESQL' AND o.schema_nome = 'public' AND o.objeto_nome = 'vw_dau';
 
 -- public.food
 INSERT INTO catalogo.coluna (objeto_id, coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)

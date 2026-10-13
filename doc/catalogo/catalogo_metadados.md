@@ -51,6 +51,8 @@ dataload (MongoDB). Exceção: `profile.dietary_restriction` ainda não existe n
 |---|---|---|---|
 | [`address`](#address) | tabela | 9 | Endereços de households, empresas e lojas. Usado na análise regional (cidade, UF, região). |
 | [`auth_method`](#auth_method) | tabela | 5 | Formas de login do perfil: no máximo uma por provedor. |
+| [`daily_active_users`](#daily_active_users) | tabela | 3 | Monitoramento (DAU): 1 linha por usuário (profile) ativo por dia. Criada por `script/04_monitoramento/script_dau.sql`, fora do Flyway. |
+| [`vw_dau`](#vw_dau) | view | 2 | Monitoramento: quantidade de usuários ativos (DAU) por dia. |
 | [`category`](#category) | tabela | 2 | Domínio: categorias de alimentos (17 fixas, iguais às do supermercado). |
 | [`company`](#company) | tabela | 4 | Empresa cliente (B2B). Cada empresa é também um perfil COMPANY. |
 | [`food`](#food) | tabela | 7 | Catálogo de alimentos (SKU): produto + marca + embalagem, identificado pelo GTIN. |
@@ -102,6 +104,11 @@ erDiagram
         numeric package_quantity
         unit_of_measure_enum unit_of_measure
         varchar gtin UK
+    }
+    daily_active_users {
+        date activity_date PK
+        integer user_id PK,FK
+        timestamp first_seen_at
     }
     pantry_item {
         integer id PK
@@ -175,6 +182,7 @@ erDiagram
     plan ||--o{ payment : "plan_id"
     address |o--o{ profile : "address_id"
     profile ||--o{ profile_phone : "profile_id"
+    profile ||--o{ daily_active_users : "user_id"
     company ||--o{ store : "company_id"
     profile ||--o| store : "profile_id"
 ```
@@ -246,6 +254,32 @@ Regras:
 - **FK** `company_plan_id_fkey`: ON DELETE NO ACTION
 - **FK** `company_profile_id_fkey`: ON DELETE NO ACTION
 - **trigger** `trg_company_profile_type` → `validate_profile_reference_type('COMPANY')`
+
+#### `daily_active_users`
+
+*tabela* — Monitoramento (DAU): 1 linha por usuário (profile) ativo por dia. Alimentada por `register_daily_activity()`; criada por `script/04_monitoramento/script_dau.sql`, fora do Flyway.
+
+| Coluna | Tipo | Nulo | Padrão | Chave | LGPD | Descrição |
+|---|---|---|---|---|---|---|
+| `activity_date` | date | não | — | PK (activity_date, user_id) | INTERNO | Dia da atividade no fuso America/Sao_Paulo. |
+| `user_id` | integer | não | — | PK (activity_date, user_id), FK → `profile.id` | INTERNO | Usuário ativo no dia (FK profile.id, cascata). |
+| `first_seen_at` | timestamp without time zone | não | CURRENT_TIMESTAMP | — | INTERNO | Momento do primeiro acesso/login do usuário no dia. |
+
+Regras:
+
+- **PK** `pk_daily_active_users`: (activity_date, user_id) — no máximo 1 registro por usuário por dia
+- **FK** `daily_active_users_user_id_fkey`: ON DELETE CASCADE
+- **índice** `idx_daily_active_users_user_id`: (user_id)
+- **função** `register_daily_activity(user_id, [data])` → `INSERT ... ON CONFLICT DO NOTHING`
+
+#### `vw_dau`
+
+*view* — Monitoramento: quantidade de usuários ativos (DAU) por dia.
+
+| Coluna | Tipo | Nulo | Padrão | Chave | LGPD | Descrição |
+|---|---|---|---|---|---|---|
+| `activity_date` | date | sim | — | — | INTERNO | Dia (fuso America/Sao_Paulo). |
+| `dau` | bigint | sim | — | — | INTERNO | Quantidade de usuários distintos ativos no dia. |
 
 #### `food`
 
@@ -422,6 +456,7 @@ Regras:
 
 | Função | Descrição | Usada por |
 |---|---|---|
+| `register_daily_activity(user_id, [data])` | Registra o acesso/login do usuário no DAU do dia (`INSERT ... ON CONFLICT DO NOTHING`). Retorna TRUE no 1º acesso do dia. Chamada pelos serviços após autenticar. | `daily_active_users` |
 | `prevent_profile_type_change()` | Trigger: impede alterar profile.type depois do cadastro. | `profile` (trg_profile_type_lock) |
 | `validate_profile_reference_type()` | Trigger: garante que profile_id aponte para um perfil do tipo passado como argumento (HOUSEHOLD, COMPANY ou STORE). | `company` (trg_company_profile_type), `pantry_item` (trg_pantry_household_type), `pantry_product_setting` (trg_pantry_product_setting_household_type), `store` (trg_store_profile_type) |
 
