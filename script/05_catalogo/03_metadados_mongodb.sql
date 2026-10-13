@@ -13,13 +13,11 @@ DELETE FROM catalogo.objeto WHERE banco = 'MONGODB';  -- as colunas saem em casc
 -- ------------------------------------------------------------------ objetos
 INSERT INTO catalogo.objeto (banco, schema_nome, objeto_nome, tipo_objeto, descricao) VALUES
     ('MONGODB', NULL, 'recipes', 'COLLECTION', 'Receitas geradas pela IA ou cadastradas pelo usuário.'),
-    ('MONGODB', NULL, 'recipe_accounts', 'COLLECTION', 'Receitas salvas por household (relação N:N receita × perfil).'),
     ('MONGODB', NULL, 'events', 'COLLECTION', 'Eventos planejados pelo household (churrasco, aniversário) com as receitas e o cálculo de ingredientes.'),
     ('MONGODB', NULL, 'shopping_lists', 'COLLECTION', 'Listas de compras, avulsas ou geradas a partir de um evento.'),
     ('MONGODB', NULL, 'records', 'COLLECTION', 'Movimentos de estoque do household. item_consumed e item_expired são os mesmos eventos que o BI lê de bi_hist.registro_estoque (KPIs D1 e D9).'),
     ('MONGODB', NULL, 'notifications', 'COLLECTION', 'Alertas do NexUs-Notify. Formato igual ao domínio Notification do serviço.'),
     ('MONGODB', NULL, 'conversations', 'COLLECTION', 'Histórico das conversas com o assistente.'),
-    ('MONGODB', NULL, 'knowledge', 'COLLECTION', 'Fatos que a IA aprendeu sobre o household (gostos, acertos e erros de estimativa).'),
     ('MONGODB', NULL, 'metrics', 'COLLECTION', 'Telemetria da IA: 1 requisição ao assistente.'),
     ('MONGODB', NULL, 'tool_metrics', 'COLLECTION', 'Telemetria da IA: 1 chamada de ferramenta do assistente.'),
     ('MONGODB', NULL, 'traces', 'COLLECTION', 'Telemetria da IA: 1 etapa (span) de execução.');
@@ -43,18 +41,6 @@ CROSS JOIN (VALUES
     ('created_by', 11, 'string', FALSE, NULL, NULL, NULL, 'INTERNO', 'ai ou user.')
 ) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
 WHERE o.banco = 'MONGODB' AND o.objeto_nome = 'recipes';
-
--- mongodb.recipe_accounts
-INSERT INTO catalogo.coluna (objeto_id, coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
-SELECT o.id, v.coluna_nome, v.posicao, v.tipo_dado, v.aceita_nulo, v.valor_padrao, v.chave, v.referencia, v.classificacao_lgpd, v.descricao
-FROM catalogo.objeto o
-CROSS JOIN (VALUES
-    ('_id', 1, 'ObjectId', FALSE, NULL, 'PK', NULL, 'INTERNO', 'Identificador.'),
-    ('id_recipe', 2, 'ObjectId', FALSE, NULL, 'FK', 'recipes._id', 'INTERNO', 'Receita (recipes._id).'),
-    ('id_account', 3, 'int', FALSE, NULL, 'FK', 'profile.id', 'PESSOAL', 'Household (profile.id).'),
-    ('created_at', 4, 'date', FALSE, NULL, NULL, NULL, 'INTERNO', 'Quando a receita foi salva.')
-) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
-WHERE o.banco = 'MONGODB' AND o.objeto_nome = 'recipe_accounts';
 
 -- mongodb.events
 INSERT INTO catalogo.coluna (objeto_id, coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
@@ -144,22 +130,6 @@ CROSS JOIN (VALUES
     ('updated_at', 7, 'date', FALSE, NULL, NULL, NULL, 'INTERNO', 'Última mensagem.')
 ) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
 WHERE o.banco = 'MONGODB' AND o.objeto_nome = 'conversations';
-
--- mongodb.knowledge
-INSERT INTO catalogo.coluna (objeto_id, coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
-SELECT o.id, v.coluna_nome, v.posicao, v.tipo_dado, v.aceita_nulo, v.valor_padrao, v.chave, v.referencia, v.classificacao_lgpd, v.descricao
-FROM catalogo.objeto o
-CROSS JOIN (VALUES
-    ('_id', 1, 'ObjectId', FALSE, NULL, 'PK', NULL, 'INTERNO', 'Identificador.'),
-    ('household_id', 2, 'int', FALSE, NULL, 'FK', 'profile.id', 'PESSOAL', 'Household (profile.id).'),
-    ('source_agent', 3, 'string', FALSE, NULL, NULL, NULL, 'INTERNO', 'chat, recipes, events ou stock.'),
-    ('knowledge_type', 4, 'string', FALSE, NULL, NULL, NULL, 'INTERNO', 'preference, recipe_feedback, event_estimation_error ou event_estimation_success.'),
-    ('fact', 5, 'string', FALSE, NULL, NULL, NULL, 'SENSIVEL', 'Fato aprendido, em texto livre.'),
-    ('context.origin_event_id', 6, 'ObjectId', TRUE, NULL, 'FK', 'events._id', 'INTERNO', 'Evento que originou o fato (events._id).'),
-    ('ai_guideline.identified_triggers', 7, 'array<string>', FALSE, NULL, NULL, NULL, 'INTERNO', 'Gatilhos identificados.'),
-    ('ai_guideline.recommended_action', 8, 'string', FALSE, NULL, NULL, NULL, 'INTERNO', 'Ação recomendada à IA.')
-) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
-WHERE o.banco = 'MONGODB' AND o.objeto_nome = 'knowledge';
 
 -- mongodb.metrics
 INSERT INTO catalogo.coluna (objeto_id, coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
