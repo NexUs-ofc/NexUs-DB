@@ -1,8 +1,8 @@
 # Catálogo de metadados — NexUs
 
 Descreve **o que cada dado significa, onde ele vive, como é definido e quão sensível ele é**,
-nos três repositórios de dados do NexUs. Para ter o catálogo como tabela no banco, rode
-[catalogo_metadados.sql](catalogo_metadados.sql): ele cria o schema `catalogo` com os mesmos dados.
+nos três repositórios de dados do NexUs. Para ter o catálogo como tabela no banco (schema `catalogo`),
+rode os scripts de [script/05_catalogo/](../../script/05_catalogo/) na ordem `01`, `02` e `03`.
 
 | # | Seção | Conteúdo |
 |---|---|---|

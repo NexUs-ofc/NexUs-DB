@@ -10,7 +10,7 @@ O repositório tem quatro frentes:
 
 - **Schema SQL** — DDL, enums, funções e triggers do PostgreSQL, versionado com Flyway sob `migrations/`.
 - **Dataload** — popula dados fictícios no PostgreSQL e no MongoDB (`script/dataload`), assumindo o schema já aplicado.
-- **Catálogo de metadados** — o que cada tabela, coluna e collection significa, com tipo, chaves e classificação LGPD (`doc/catalogo/`).
+- **Catálogo de metadados** — o que cada tabela, coluna e collection significa, com tipo, chaves e classificação LGPD (`script/05_catalogo/` e `doc/catalogo/`).
 - **Auxiliares** — views de BI, scripts de monitoramento e placeholders para trabalhos futuros.
 
 ```
@@ -19,6 +19,7 @@ NexUs-DB/
 ├── script/
 │   ├── 03_bi_views/          # data mart (star schema) para BI
 │   ├── 04_monitoramento/     # scripts de monitoramento
+│   ├── 05_catalogo/          # SQL do catálogo de metadados (schema catalogo)
 │   └── dataload/             # carga de dados (Postgres + Mongo)
 ├── doc/
 │   └── catalogo/             # catálogo de metadados (PostgreSQL, data mart, MongoDB)
@@ -29,12 +30,14 @@ NexUs-DB/
 
 ## Catálogo de metadados
 
-O catálogo fica em [`doc/catalogo/`](doc/catalogo/):
+O catálogo existe como tabela no banco (schema `catalogo`) e como documento para leitura:
 
 | Arquivo | Conteúdo |
 |---------|----------|
 | [catalogo_metadados.md](doc/catalogo/catalogo_metadados.md) | Catálogo completo: PostgreSQL (tabelas, enums, regras, diagrama ER), data mart (`bi`/`bi_hist`) e MongoDB |
-| [catalogo_metadados.sql](doc/catalogo/catalogo_metadados.sql) | SQL que cria o schema `catalogo` no PostgreSQL e insere todo o catálogo (`catalogo.objeto`, `catalogo.coluna` e a view `catalogo.vw_dicionario_dados`) |
+| [01_estrutura.sql](script/05_catalogo/01_estrutura.sql) | Recria o schema `catalogo`: tabelas `catalogo.objeto` e `catalogo.coluna` e a view `catalogo.vw_dicionario_dados` |
+| [02_metadados_postgres.sql](script/05_catalogo/02_metadados_postgres.sql) | Carrega os metadados das tabelas e views do PostgreSQL |
+| [03_metadados_mongodb.sql](script/05_catalogo/03_metadados_mongodb.sql) | Carrega os metadados das collections do MongoDB |
 
 Para cada coluna o catálogo traz tipo, nulidade, padrão, chave (PK/FK/UK), descrição e classificação LGPD:
 
@@ -47,11 +50,18 @@ Para cada coluna o catálogo traz tipo, nulidade, padrão, chave (PK/FK/UK), des
 
 Ao alterar o schema ou uma collection, atualize o catálogo no mesmo PR.
 
-Para carregar o catálogo no banco (pode rodar de novo; recria só o schema `catalogo`):
+O catálogo não é versionado com Flyway: os scripts podem rodar de novo quando quiser, e o
+histórico das mudanças fica no git. Para carregar tudo, rode na ordem:
 
 ```bash
-psql -h <host> -U <usuario> -d <banco> -f doc/catalogo/catalogo_metadados.sql
+psql -h <host> -U <usuario> -d <banco> -f script/05_catalogo/01_estrutura.sql
+psql -h <host> -U <usuario> -d <banco> -f script/05_catalogo/02_metadados_postgres.sql
+psql -h <host> -U <usuario> -d <banco> -f script/05_catalogo/03_metadados_mongodb.sql
 ```
+
+Para mudar só o MongoDB, edite o `03_metadados_mongodb.sql` e rode só ele: ele apaga e
+recarrega apenas os metadados do MongoDB (o mesmo vale para o `02` e o PostgreSQL). O `01`
+recria o schema do zero, então depois dele rode o `02` e o `03`.
 
 ```sql
 SELECT * FROM catalogo.vw_dicionario_dados WHERE objeto_nome = 'profile' ORDER BY posicao;
