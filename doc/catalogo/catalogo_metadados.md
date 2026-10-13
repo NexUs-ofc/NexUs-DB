@@ -8,7 +8,7 @@ rode os scripts de [script/05_catalogo/](../../script/05_catalogo/) na ordem `01
 |---|---|---|
 | 1 | [PostgreSQL — schema `public`](#1-postgresql-schema-public) | 12 tabelas transacionais, 5 enums, regras de negócio e diagrama ER |
 | 2 | [Data mart — schemas `bi` e `bi_hist`](#2-data-mart-schemas-bi-e-bi_hist) | Dimensões, fatos e KPIs de desperdício (star schema) |
-| 3 | [MongoDB](#3-mongodb) | 11 collections: receitas, eventos, notificações, IA e telemetria |
+| 3 | [MongoDB](#3-mongodb) | 9 collections: receitas, eventos, notificações, IA e telemetria |
 
 ## Como ler este catálogo
 
@@ -757,13 +757,11 @@ Classificação LGPD: a mesma da seção [Como ler este catálogo](#classificaç
 | Collection | Domínio | Grão | Escrita pelo dataload | Ligação com o PostgreSQL |
 |---|---|---|---|---|
 | [`recipes`](#recipes) | receitas | 1 receita | insere | `ingredients.food_id` → `food.id` |
-| [`recipe_accounts`](#recipe_accounts) | receitas | 1 receita salva por household | insere | `id_account` → `profile.id` |
 | [`events`](#events) | eventos | 1 evento planejado | insere | `household_id` → `profile.id` |
 | [`shopping_lists`](#shopping_lists) | compras | 1 lista de compras | insere | `household_id` → `profile.id` |
 | [`records`](#records) | despensa | 1 movimento de estoque | recria | `account_id` → `profile.id` |
 | [`notifications`](#notifications) | notificações | 1 alerta enviado | insere | `profile_id` → `profile.id` |
 | [`conversations`](#conversations) | IA | 1 conversa com o assistente | insere | `account_id` → `profile.id` |
-| [`knowledge`](#knowledge) | IA | 1 fato aprendido sobre o household | insere | `household_id` → `profile.id` |
 | [`metrics`](#metrics) | observabilidade | 1 requisição à IA | recria | — |
 | [`tool_metrics`](#tool_metrics) | observabilidade | 1 chamada de ferramenta da IA | recria | — |
 | [`traces`](#traces) | observabilidade | 1 span de execução | recria | — |
@@ -791,17 +789,6 @@ Receitas geradas pela IA ou cadastradas pelo usuário.
 | `instructions` | string | sim | INTERNO | Modo de preparo. |
 | `is_liked` | bool | sim | INTERNO | Usuário marcou como favorita. |
 | `created_by` | string | sim | INTERNO | `ai` ou `user`. |
-
-#### `recipe_accounts`
-
-Receitas salvas por household (relação N:N receita × perfil).
-
-| Campo | Tipo | Obrigatório | LGPD | Descrição |
-|---|---|---|---|---|
-| `_id` | ObjectId | sim | INTERNO | Identificador. |
-| `id_recipe` | ObjectId | sim | INTERNO | Receita (`recipes._id`). |
-| `id_account` | int | sim | PESSOAL | Household (`profile.id`). |
-| `created_at` | date | sim | INTERNO | Quando a receita foi salva. |
 
 ### Eventos e compras
 
@@ -897,23 +884,6 @@ Histórico das conversas com o assistente.
 | `historico.content` | string | sim | SENSIVEL | Texto da mensagem. |
 | `created_at` | date | sim | INTERNO | Início da conversa. |
 | `updated_at` | date | sim | INTERNO | Última mensagem. |
-
-#### `knowledge`
-
-Fatos que a IA aprendeu sobre o household (gostos, acertos e erros de estimativa).
-As restrições alimentares declaradas ficam no PostgreSQL (`profile.dietary_restriction`);
-aqui ficam observações que a IA aprendeu, em texto livre.
-
-| Campo | Tipo | Obrigatório | LGPD | Descrição |
-|---|---|---|---|---|
-| `_id` | ObjectId | sim | INTERNO | Identificador. |
-| `household_id` | int | sim | PESSOAL | Household (`profile.id`). |
-| `source_agent` | string | sim | INTERNO | `chat`, `recipes`, `events` ou `stock`. |
-| `knowledge_type` | string | sim | INTERNO | `preference`, `recipe_feedback`, `event_estimation_error` ou `event_estimation_success`. |
-| `fact` | string | sim | SENSIVEL | Fato aprendido, em texto livre. |
-| `context.origin_event_id` | ObjectId | não | INTERNO | Evento que originou o fato (`events._id`). |
-| `ai_guideline.identified_triggers` | array\<string\> | sim | INTERNO | Gatilhos identificados. |
-| `ai_guideline.recommended_action` | string | sim | INTERNO | Ação recomendada à IA. |
 
 ### Observabilidade da IA
 
