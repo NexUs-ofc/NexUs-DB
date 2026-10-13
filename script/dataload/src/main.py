@@ -24,9 +24,27 @@ def seed_mongo(*, reset: bool = False):
     print("[OK] MongoDB populado.")
 
 
+def register_dau(profile_id: int):
+    pg = PostgresConnection()
+    try:
+        first_access = pg.register_daily_activity(profile_id)
+    finally:
+        pg.close()
+    if first_access:
+        print(f"[OK] Acesso do profile {profile_id} registrado no DAU de hoje.")
+    else:
+        print(f"[OK] Profile {profile_id} já estava no DAU de hoje.")
+
+
 def main():
     parser = argparse.ArgumentParser(description="NexUs-DB dataload")
-    parser.add_argument("comando", choices=["seed-sql", "seed-mongo", "all"])
+    parser.add_argument(
+        "comando", choices=["seed-sql", "seed-mongo", "all", "register-dau"]
+    )
+    parser.add_argument(
+        "--profile-id", type=int,
+        help="register-dau: id do profile que acessou/fez login.",
+    )
     parser.add_argument(
         "--reset",
         action="store_true",
@@ -37,6 +55,12 @@ def main():
         help="bi: acrescenta ~12 meses de uso simulado para BI (somente PostgreSQL).",
     )
     args = parser.parse_args()
+
+    if args.comando == "register-dau":
+        if args.profile_id is None:
+            parser.error("register-dau exige --profile-id.")
+        register_dau(args.profile_id)
+        return
 
     if args.perfil == "bi":
         from .bi import executar

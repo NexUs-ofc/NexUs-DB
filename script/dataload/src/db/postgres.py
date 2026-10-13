@@ -29,6 +29,24 @@ class PostgresConnection:
         with self.conn.cursor() as cur:
             execute_values(cur, query, values)
 
+    def register_daily_activity(self, profile_id: int) -> bool:
+        """Registra o acesso/login do profile no DAU de hoje.
+
+        Chama a função register_daily_activity() criada por
+        script/04_monitoramento/script_dau.sql. Retorna True no primeiro
+        acesso do dia e False nos seguintes. Faz commit próprio, pois o
+        registro de acesso é independente das outras operações.
+        """
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute("SELECT register_daily_activity(%s)", (profile_id,))
+                first_access = cur.fetchone()[0]
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
+        return first_access
+
     def reset_seed_data(self):
         query = """
             TRUNCATE TABLE
