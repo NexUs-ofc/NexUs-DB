@@ -13,7 +13,9 @@ migrations/
 ├── V3__drop_not_null_constraint.sql # profile.address_id passa a aceitar NULL
 ├── V4__add_geolocation_to_address.sql # adiciona latitude e longitude a address
 ├── V5__add_gtin_to_food.sql         # adiciona GTIN único a food
-└── V6__use_gtin_as_food_unique_identifier.sql # remove a unicidade por dados descritivos
+├── V6__use_gtin_as_food_unique_identifier.sql # remove a unicidade por dados descritivos
+├── V7__require_address_for_household_and_store.sql # exige endereço para casas e lojas
+└── V8__profile_restrictions_store_hours_billing_and_indexes.sql # perfil, horários, cobrança e índices
 ```
 
 O schema é compartilhado entre os serviços do NexUs, então o contrato do
@@ -42,3 +44,50 @@ histórico (`flyway_schema_history`) e aplica todas as migrations em sequência.
 
 Novas mudanças de schema devem ser adicionadas com a próxima versão disponível,
 nunca alterando os arquivos já aplicados.
+
+## V8 — perfil, lojas, cobrança e desempenho
+
+A V8 adiciona profile.dietary_restrictions como TEXT[] NOT NULL com lista vazia
+por padrão, e store.opening_time / store.closing_time como um único intervalo
+local. O catálogo de restrições permanece no frontend. Os horários são
+opcionais, mas precisam estar ambos ausentes ou ambos presentes, com o
+fechamento posterior à abertura.
+
+A restrição de endereço para HOUSEHOLD e STORE já está na V7; a V8 preserva
+essa regra.
+
+### Pré-requisitos e aplicação
+
+- O servidor precisa disponibilizar pg_trgm e PostGIS; o usuário da migration
+  precisa ter permissão para habilitar essas extensões.
+- O Flyway aplica a V8 em transação; os índices são criados sem CONCURRENTLY.
+  Planejar a janela de aplicação, pois a criação pode bloquear escritas.
+- CREATE INDEX IF NOT EXISTS verifica nomes, não equivalência de definições:
+  revisar previamente índices criados manualmente com esses mesmos nomes.
+- O novo índice geográfico atende ST_DWithin usando a expressão
+  ST_SetSRID(ST_MakePoint(longitude::double precision, latitude::double precision), 4326)::geography
+  e o filtro de coordenadas não nulas. A query atual do Core com ACOS precisa
+  ser substituída antes de aproveitar esse índice.
+
+### Functions e procedures
+
+| Objeto | Contrato |
+| --- | --- |
+| fn_get_expiring_products(início, fim) | Janela inclusiva; retorna somente itens de perfis ACTIVE, ordenados por validade e ID. |
+| fn_get_items_below_minimum(profile_id opcional) | Considera validade hoje ou futura e validade ausente; inclui alimentos configurados sem estoque. |
+| sp_generate_monthly_payments(data opcional, dia opcional, INOUT quantidade) | Dia padrão 10, aceito entre 1 e 28; uma cobrança por empresa/competência; inclui BLOCKED e exclui INACTIVE. |
+| sp_update_overdue_payments(tolerância opcional, INOUT vencidos, INOUT bloqueados, INOUT reativados) | Tolerância não negativa; pagamentos vencem após o dia limite; contagens de bloqueio/reativação são de empresas. |
+
+Quitar todas as pendências OVERDUE reativa a empresa e todas as suas lojas
+BLOCKED, conforme a regra de que lojas só são bloqueadas por inadimplência.
+Perfis INACTIVE são preservados. O job também bloqueia uma loja ACTIVE
+encontrada sob uma empresa já BLOCKED que ainda tenha pagamentos OVERDUE.
+
+A geração de cobranças mantém NOT EXISTS e ON CONFLICT DO NOTHING em conjunto
+com o índice único de competência para evitar duplicação concorrente.
+Agendamentos, cache, ranking e entrega de notificações permanecem tarefas
+dos serviços.
+
+A V8 mantém somente o índice trigram sobre LOWER(name). A IA já usa essa
+expressão; a consulta do Core deve usar LOWER para aproveitar o mesmo índice
+nas buscas da API.
