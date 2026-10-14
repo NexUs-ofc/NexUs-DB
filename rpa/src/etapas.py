@@ -255,3 +255,4 @@ ETAPAS = [
     ("telefones", migrar_telefones),
     ("itens_dispensa", migrar_itens_dispensa),
 ]
+
