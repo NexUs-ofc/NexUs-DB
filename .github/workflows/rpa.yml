@@ -1,0 +1,54 @@
+name: RPA Migração Legado
+
+on:
+  schedule:
+    - cron: "0 6 * * *"   # todo dia às 03:00 (horário de Brasília)
+  workflow_dispatch:       # permite executar manualmente pela aba Actions
+
+# Impede duas execuções ao mesmo tempo (a carga é idempotente, mas não concorrente)
+concurrency:
+  group: rpa-migracao
+  cancel-in-progress: false
+
+jobs:
+  migrar:
+    name: Migrar banco legado
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run RPA
+        env:
+          PG_HOST: ${{ secrets.PG_HOST }}
+          PG_PORT: ${{ secrets.PG_PORT }}
+          PG_DATABASE: ${{ secrets.PG_DATABASE }}
+          PG_USER: ${{ secrets.PG_USER }}
+          PG_PASSWORD: ${{ secrets.PG_PASSWORD }}
+          PGSSLMODE: require
+          LEGADO_PG_HOST: ${{ secrets.LEGADO_PG_HOST }}
+          LEGADO_PG_PORT: ${{ secrets.LEGADO_PG_PORT }}
+          LEGADO_PG_DATABASE: ${{ secrets.LEGADO_PG_DATABASE }}
+          LEGADO_PG_USER: ${{ secrets.LEGADO_PG_USER }}
+          LEGADO_PG_PASSWORD: ${{ secrets.LEGADO_PG_PASSWORD }}
+          LEGADO_PG_SSLMODE: require
+        run: python -m rpa.src.main
+
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpa-log-${{ github.run_number }}
+          path: rpa/logs/rpa.log
+          retention-days: 30
