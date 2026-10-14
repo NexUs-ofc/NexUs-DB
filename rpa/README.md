@@ -101,6 +101,24 @@ Exemplo de saída:
 [INFO] Execução 1 concluída com sucesso
 ```
 
+## Execução automática (GitHub Actions)
+
+O workflow [`.github/workflows/rpa.yml`](../.github/workflows/rpa.yml) roda o RPA
+**todo dia às 03:00 (Brasília)** e também pode ser disparado manualmente em
+*Actions → RPA Migração Legado → Run workflow*.
+
+- Como a carga é idempotente, cada execução migra só o que for novo no legado.
+- `concurrency` impede duas execuções simultâneas.
+- Se a migração falhar, o job fica vermelho e o GitHub avisa por e-mail. O `rpa.log` de cada
+  execução fica disponível como artefato por 30 dias, e `rpa.execucao` guarda o histórico no banco.
+- Execuções agendadas só rodam a partir da branch padrão (`main`), ou seja, depois do merge.
+
+Configure em *Settings → Secrets and variables → Actions* os secrets:
+`PG_HOST`, `PG_PORT`, `PG_DATABASE`, `PG_USER`, `PG_PASSWORD` (banco novo) e
+`LEGADO_PG_HOST`, `LEGADO_PG_PORT`, `LEGADO_PG_DATABASE`, `LEGADO_PG_USER`,
+`LEGADO_PG_PASSWORD` (banco legado). Os dois bancos precisam aceitar conexões vindas
+dos runners do GitHub (sem lista restrita de IPs).
+
 Para consultar o histórico:
 
 ```sql
