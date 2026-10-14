@@ -1,28 +1,70 @@
 # NexUs-DB
 
-Banco de dados do NexUs — gestão de alimentos em geladeira, freezer e despensa. Este repositório contém o modelo relacional (PostgreSQL), a camada de dados do MongoDB, a carga de dados (dataload) e scripts auxiliares.
+Banco de dados do NexUs — gestão de alimentos em geladeira, freezer e despensa. Este repositório contém o modelo relacional (PostgreSQL), a camada de dados do MongoDB, a carga de dados (dataload), o catálogo de metadados e scripts auxiliares.
 
 PostgreSQL MongoDB Python
 
 ## O que tem aqui
 
-O repositório tem três frentes:
+O repositório tem quatro frentes:
 
 - **Schema SQL** — DDL, enums, funções e triggers do PostgreSQL, versionado com Flyway sob `migrations/`.
 - **Dataload** — popula dados fictícios no PostgreSQL e no MongoDB (`script/dataload`), assumindo o schema já aplicado.
+- **Catálogo de metadados** — o que cada tabela, coluna e collection significa, com tipo, chaves e classificação LGPD (`script/05_catalogo/` e `doc/catalogo/`).
 - **Auxiliares** — views de BI, scripts de monitoramento e placeholders para trabalhos futuros.
 
 ```
 NexUs-DB/
 ├── migrations/                # migrations Flyway (schema versionado)
 ├── script/
-│   ├── 03_bi_views/          # views de BI (a definir)
+│   ├── 03_bi_views/          # data mart (star schema) para BI
 │   ├── 04_monitoramento/     # scripts de monitoramento
+│   ├── 05_catalogo/          # SQL do catálogo de metadados (schema catalogo)
 │   └── dataload/             # carga de dados (Postgres + Mongo)
-├── doc/                      # documentação (a preencher)
+├── doc/
+│   └── catalogo/             # catálogo de metadados (PostgreSQL, data mart, MongoDB)
 ├── rpa/                      # automação (a preencher)
 ├── requirements.txt
 └── .env                      # credenciais (não versionado)
+```
+
+## Catálogo de metadados
+
+O catálogo existe como tabela no banco (schema `catalogo`) e como documento para leitura:
+
+| Arquivo | Conteúdo |
+|---------|----------|
+| [catalogo_metadados.md](doc/catalogo/catalogo_metadados.md) | Catálogo completo: PostgreSQL (tabelas, enums, regras, diagrama ER), data mart (`bi`/`bi_hist`) e MongoDB |
+| [01_estrutura.sql](script/05_catalogo/01_estrutura.sql) | Recria o schema `catalogo`: tabelas `catalogo.objeto` e `catalogo.coluna` e a view `catalogo.vw_dicionario_dados` |
+| [02_metadados_postgres.sql](script/05_catalogo/02_metadados_postgres.sql) | Carrega os metadados das tabelas e views do PostgreSQL |
+| [03_metadados_mongodb.sql](script/05_catalogo/03_metadados_mongodb.sql) | Carrega os metadados das collections do MongoDB |
+
+Para cada coluna o catálogo traz tipo, nulidade, padrão, chave (PK/FK/UK), descrição e classificação LGPD:
+
+| Classificação | Significado | Exemplos |
+|---------------|-------------|----------|
+| `INTERNO` | Dado de negócio, sem dado pessoal | `food.gtin`, `payment.amount` |
+| `PESSOAL` | Identifica ou localiza uma pessoa | `profile.email`, `address.street` |
+| `SENSIVEL` | Dado pessoal sensível (saúde, religião) | `profile.dietary_restriction` |
+| `SIGILOSO` | Credencial | `auth_method.credential` |
+
+Ao alterar o schema ou uma collection, atualize o catálogo no mesmo PR.
+
+O catálogo não é versionado com Flyway: os scripts podem rodar de novo quando quiser, e o
+histórico das mudanças fica no git. Para carregar tudo, rode na ordem:
+
+```bash
+psql -h <host> -U <usuario> -d <banco> -f script/05_catalogo/01_estrutura.sql
+psql -h <host> -U <usuario> -d <banco> -f script/05_catalogo/02_metadados_postgres.sql
+psql -h <host> -U <usuario> -d <banco> -f script/05_catalogo/03_metadados_mongodb.sql
+```
+
+Para mudar só o MongoDB, edite o `03_metadados_mongodb.sql` e rode só ele: ele apaga e
+recarrega apenas os metadados do MongoDB (o mesmo vale para o `02` e o PostgreSQL). O `01`
+recria o schema do zero, então depois dele rode o `02` e o `03`.
+
+```sql
+SELECT * FROM catalogo.vw_dicionario_dados WHERE objeto_nome = 'profile' ORDER BY posicao;
 ```
 
 ## Schema PostgreSQL
@@ -50,7 +92,7 @@ manualmente).
 | `category` | Categorias de alimentos |
 | `food` | Alimentos (produtos) do catálogo |
 | `address` | Endereços |
-| `profile` | Perfis (household, company, store, admin) |
+| `profile` | Perfis (household, company, store, admin); inclui `dietary_restriction` (restrições alimentares do household) |
 | `profile_phone` | Telefones do perfil |
 | `auth_method` | Métodos de autenticação (Google/senha) |
 | `plan` | Planos de assinatura |
@@ -111,6 +153,6 @@ Detalhes de implementação do dataload (factories, seeders, collections do Mong
 
 ## Em andamento / placeholders
 
-- `script/03_bi_views/` — views de BI ainda não definidas.
 - `script/04_monitoramento/script_dau.sql` — métrica de DAU, ainda sem conteúdo.
-- `doc/` e `rpa/` — vazios, aguardando trabalho.
+- `rpa/` — vazio, aguardando trabalho.
+- `profile.dietary_restriction` — documentado no catálogo, ainda sem migration (próxima: V8).
