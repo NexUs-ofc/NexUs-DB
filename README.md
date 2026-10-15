@@ -23,7 +23,7 @@ NexUs-DB/
 │   └── dataload/             # carga de dados (Postgres + Mongo)
 ├── doc/
 │   └── catalogo/             # catálogo de metadados (PostgreSQL, data mart, MongoDB)
-├── rpa/                      # automação (a preencher)
+├── rpa/                      # RPA de migração do banco legado
 ├── requirements.txt
 └── .env                      # credenciais (não versionado)
 ```
@@ -146,6 +146,18 @@ MONGO_DB=...
 
 Detalhes de implementação do dataload (factories, seeders, collections do Mongo) estão em [script/dataload/README.md](script/dataload/README.md).
 
+## RPA de migração
+
+O RPA em `rpa/` migra os dados do banco legado (`tb_*`) para o banco novo, com carga
+idempotente e retomada após falha. Configure as variáveis `LEGADO_PG_*` no `.env` e rode,
+a partir da raiz:
+
+```bash
+python -m rpa.src.main
+```
+
+Mapeamento, tratamento de falhas e configuração em [rpa/README.md](rpa/README.md).
+
 ## Configuração do ambiente
 
 - Crie um `.env` na raiz com as credenciais de PostgreSQL e MongoDB (o `.env` é o único arquivo ignorado no `.gitignore`).
@@ -154,5 +166,4 @@ Detalhes de implementação do dataload (factories, seeders, collections do Mong
 ## Em andamento / placeholders
 
 - `script/04_monitoramento/script_dau.sql` — métrica de DAU, ainda sem conteúdo.
-- `rpa/` — vazio, aguardando trabalho.
 - `profile.dietary_restriction` — documentado no catálogo, ainda sem migration (próxima: V8).
