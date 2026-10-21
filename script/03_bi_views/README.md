@@ -7,6 +7,7 @@ Rodar no pgAdmin (Query Tool) no banco do app, **depois** do dataload BI; só me
 |---|---|
 | Dimensões | `dim_tempo`, `dim_alimento` (com categoria), `dim_localidade` (cidade, UF, região), `dim_perfil`, `dim_empresa` (com plano) |
 | Fatos | `fato_estoque` (1 item hoje na despensa), `fato_movimento` (1 item consumido ou descartado), `fato_estoque_minimo` (household × alimento), `fato_pagamento` (1 cobrança), `fato_cadastro` (1 perfil) |
+| Evolução | `kpi_d1_evolucao_mensal`: running total da perda, variação mês a mês (`LAG`), média móvel e `RANK` |
 | Cards | `vw_kpi_cards`: valor, meta, desvio e situação de D1–D9 (+ financeiro e base ativa) |
 | Volume | `vw_volume_tabelas`: registros por tabela e se atinge 500 (company/store limitadas pelos profiles) |
 
