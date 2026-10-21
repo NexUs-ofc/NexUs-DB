@@ -1,6 +1,6 @@
 -- =============================================================================
 -- NexUs — Catálogo de metadados (2/3): tabelas e views do PostgreSQL
--- Schema catalogo, migrations V1-V7 + monitoramento (DAU), e schemas bi e bi_hist (data mart).
+-- Migrations V1-V9 (inclui schema auditoria), monitoramento (DAU) e schemas bi e bi_hist (data mart).
 -- Pode rodar de novo quando quiser: apaga e recarrega só os metadados do PostgreSQL.
 -- Requer 01_estrutura.sql já executado.
 -- =============================================================================
@@ -42,7 +42,11 @@ INSERT INTO catalogo.objeto (banco, schema_nome, objeto_nome, tipo_objeto, descr
     ('POSTGRESQL', 'bi', 'kpi_d9_desperdicio_categoria', 'VIEW', 'D9: itens expirados da categoria / households que têm a categoria.'),
     ('POSTGRESQL', 'bi', 'vw_kpi_cards', 'VIEW', 'Cards do dashboard: valor, meta, desvio e situação de D1-D9, financeiro (F1, F2) e base ativa (U1).'),
     ('POSTGRESQL', 'bi', 'vw_volume_tabelas', 'VIEW', 'Teste de volume: registros por tabela e se atinge 500.'),
-    ('POSTGRESQL', 'bi_hist', 'registro_estoque', 'TABELA', 'Histórico de saída da despensa: 1 linha por item consumido ou descartado vencido.');
+    ('POSTGRESQL', 'bi_hist', 'registro_estoque', 'TABELA', 'Histórico de saída da despensa: 1 linha por item consumido ou descartado vencido.'),
+    ('POSTGRESQL', 'bi', 'kpi_d1_evolucao_mensal', 'VIEW', 'D1 por mês com running total da perda, variação mês a mês, média móvel de 3 meses e ranking (window functions).'),
+    ('POSTGRESQL', 'auditoria', 'log_alteracao', 'TABELA', 'Tabela pai dos logs de auditoria (herança). Consultá-la retorna os logs de todas as filhas (V9).'),
+    ('POSTGRESQL', 'auditoria', 'log_profile', 'TABELA', 'Log de INSERT/UPDATE/DELETE em profile; herda as colunas de log_alteracao (V9).'),
+    ('POSTGRESQL', 'auditoria', 'log_payment', 'TABELA', 'Log de INSERT/UPDATE/DELETE em payment; herda as colunas de log_alteracao (V9).');
 
 -- ------------------------------------------------------------------ colunas
 -- public.address
@@ -209,7 +213,7 @@ CROSS JOIN (VALUES
     ('type', 6, 'profile_type_enum', FALSE, NULL, NULL, NULL, 'INTERNO', 'Tipo do perfil (profile_type_enum). Imutável.'),
     ('profile_image_url', 7, 'character varying(500)', TRUE, NULL, NULL, NULL, 'PESSOAL', 'URL da foto de perfil.'),
     ('status', 8, 'profile_status_enum', FALSE, '''ACTIVE''::profile_status_enum', NULL, NULL, 'INTERNO', 'Situação do perfil (profile_status_enum). Padrão ACTIVE.'),
-    ('dietary_restriction', 9, 'text', TRUE, NULL, NULL, NULL, 'SENSIVEL', 'Restrições alimentares declaradas pelo household (alergias, intolerâncias, dietas, condições de saúde ou religiosas). Ex.: lactose, glúten, vegano. Nulo = não informou.')
+    ('dietary_restrictions', 9, 'text[]', FALSE, '''{}''::text[]', NULL, NULL, 'SENSIVEL', 'Lista de códigos de restrição alimentar do household (alergias, intolerâncias, dietas, condições de saúde ou religiosas), V8. O catálogo de códigos fica no frontend. Lista vazia = nenhuma.')
 ) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
 WHERE o.banco = 'POSTGRESQL' AND o.schema_nome = 'public' AND o.objeto_nome = 'profile';
 
@@ -231,7 +235,9 @@ CROSS JOIN (VALUES
     ('id', 1, 'integer', FALSE, 'nextval(''store_id_seq''::regclass)', 'PK', NULL, 'INTERNO', 'Identificador da loja (serial).'),
     ('cnpj', 2, 'character(14)', FALSE, NULL, 'UK', NULL, 'INTERNO', 'CNPJ da filial com 14 dígitos, sem máscara, único.'),
     ('company_id', 3, 'integer', FALSE, NULL, 'FK', 'company.id', 'INTERNO', 'Empresa dona da loja (FK company.id, cascata).'),
-    ('profile_id', 4, 'integer', FALSE, NULL, 'FK, UK', 'profile.id', 'INTERNO', 'Perfil STORE da loja (FK profile.id, 1:1).')
+    ('profile_id', 4, 'integer', FALSE, NULL, 'FK, UK', 'profile.id', 'INTERNO', 'Perfil STORE da loja (FK profile.id, 1:1).'),
+    ('opening_time', 5, 'time without time zone', TRUE, NULL, NULL, NULL, 'INTERNO', 'Horário de abertura, igual para todos os dias (V8). Nulo junto com closing_time.'),
+    ('closing_time', 6, 'time without time zone', TRUE, NULL, NULL, NULL, 'INTERNO', 'Horário de fechamento, posterior à abertura (V8). Nulo junto com opening_time.')
 ) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
 WHERE o.banco = 'POSTGRESQL' AND o.schema_nome = 'public' AND o.objeto_nome = 'store';
 
@@ -521,5 +527,56 @@ CROSS JOIN (VALUES
     ('estimated_loss', 10, 'numeric(10,2)', FALSE, '0', NULL, NULL, 'INTERNO', 'Perda estimada em R$ com o descarte.')
 ) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
 WHERE o.banco = 'POSTGRESQL' AND o.schema_nome = 'bi_hist' AND o.objeto_nome = 'registro_estoque';
+
+-- bi.kpi_d1_evolucao_mensal
+INSERT INTO catalogo.coluna (objeto_id, coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
+SELECT o.id, v.coluna_nome, v.posicao, v.tipo_dado, v.aceita_nulo, v.valor_padrao, v.chave, v.referencia, v.classificacao_lgpd, v.descricao
+FROM catalogo.objeto o
+CROSS JOIN (VALUES
+    ('ano_mes', 1, 'text', TRUE, NULL, NULL, NULL, 'INTERNO', 'Mês do evento (AAAA-MM).'),
+    ('itens_expirados', 2, 'bigint', TRUE, NULL, NULL, NULL, 'INTERNO', 'Itens descartados vencidos no mês.'),
+    ('itens_movimentados', 3, 'bigint', TRUE, NULL, NULL, NULL, 'INTERNO', 'Itens consumidos + descartados no mês.'),
+    ('taxa_desperdicio_pct', 4, 'numeric', TRUE, NULL, NULL, NULL, 'INTERNO', 'D1 do mês, em %.'),
+    ('perda_rs', 5, 'numeric', TRUE, NULL, NULL, NULL, 'INTERNO', 'Perda estimada do mês em R$.'),
+    ('perda_acumulada_rs', 6, 'numeric', TRUE, NULL, NULL, NULL, 'INTERNO', 'Running total da perda: SUM() OVER (ORDER BY ano_mes).'),
+    ('variacao_pp', 7, 'numeric', TRUE, NULL, NULL, NULL, 'INTERNO', 'Variação da taxa em pontos percentuais vs mês anterior (LAG).'),
+    ('media_movel_3m', 8, 'numeric', TRUE, NULL, NULL, NULL, 'INTERNO', 'Média móvel da taxa nos últimos 3 meses.'),
+    ('ranking_perda', 9, 'bigint', TRUE, NULL, NULL, NULL, 'INTERNO', 'Posição do mês pela perda em R$ (RANK, 1 = maior perda).')
+) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
+WHERE o.banco = 'POSTGRESQL' AND o.schema_nome = 'bi' AND o.objeto_nome = 'kpi_d1_evolucao_mensal';
+
+-- auditoria.log_alteracao, log_profile e log_payment (mesmas colunas, por herança)
+INSERT INTO catalogo.coluna (objeto_id, coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
+SELECT o.id, v.coluna_nome, v.posicao, v.tipo_dado, v.aceita_nulo, v.valor_padrao,
+       CASE WHEN v.coluna_nome = 'id' AND o.objeto_nome <> 'log_alteracao' THEN 'PK' END,
+       v.referencia, v.classificacao_lgpd, v.descricao
+FROM catalogo.objeto o
+CROSS JOIN (VALUES
+    ('id', 1, 'bigint', FALSE, 'nextval(''auditoria.log_alteracao_id_seq''::regclass)', NULL, NULL, 'INTERNO', 'Identificador do log (sequence compartilhada pela pai e filhas).'),
+    ('tabela', 2, 'character varying(63)', FALSE, NULL, NULL, NULL, 'INTERNO', 'Tabela alterada (TG_TABLE_NAME).'),
+    ('operacao', 3, 'character varying(6)', FALSE, NULL, NULL, NULL, 'INTERNO', 'INSERT, UPDATE ou DELETE (TG_OP).'),
+    ('registro_id', 4, 'integer', TRUE, NULL, NULL, NULL, 'INTERNO', 'id do registro alterado.'),
+    ('dados_antigos', 5, 'jsonb', TRUE, NULL, NULL, NULL, 'SENSIVEL', 'Linha antes da alteração (OLD); nulo no INSERT. Pode conter dados pessoais e sensíveis.'),
+    ('dados_novos', 6, 'jsonb', TRUE, NULL, NULL, NULL, 'SENSIVEL', 'Linha depois da alteração (NEW); nulo no DELETE. Pode conter dados pessoais e sensíveis.'),
+    ('usuario', 7, 'character varying(63)', FALSE, NULL, NULL, NULL, 'INTERNO', 'Usuário do banco que fez a alteração (CURRENT_USER).'),
+    ('alterado_em', 8, 'timestamp with time zone', FALSE, 'clock_timestamp()', NULL, NULL, 'INTERNO', 'Momento exato da alteração.')
+) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
+WHERE o.banco = 'POSTGRESQL' AND o.schema_nome = 'auditoria';
+
+-- ---------------------------------------------------------- regras de negócio
+UPDATE catalogo.objeto o SET regra_negocio = r.regra
+FROM (VALUES
+    ('public', 'profile', 'Tipo imutável (trg_profile_type_lock). HOUSEHOLD e STORE exigem endereço (V7). Status BLOCKED/ACTIVE de empresas e lojas é controlado por sp_update_overdue_payments. Alterações auditadas em auditoria.log_profile.'),
+    ('public', 'payment', 'Uma cobrança por empresa e competência (uq_payment_company_period). Geradas por sp_generate_monthly_payments; PENDING vencida vira OVERDUE em sp_update_overdue_payments. Alterações auditadas em auditoria.log_payment.'),
+    ('public', 'pantry_item', 'Só para perfis HOUSEHOLD (trg_pantry_household_type). Quantidade > 0. Inserir ou alterar registra o household no DAU (trg_dau_pantry_item). Vencimentos: fn_get_expiring_products.'),
+    ('public', 'pantry_product_setting', 'Só para perfis HOUSEHOLD. Um mínimo por household e alimento. Faltas: fn_get_items_below_minimum.'),
+    ('public', 'company', 'profile_id deve ser um perfil COMPANY (trg_company_profile_type).'),
+    ('public', 'store', 'profile_id deve ser um perfil STORE (trg_store_profile_type). Abertura e fechamento juntos e fechamento > abertura.'),
+    ('public', 'auth_method', 'Um método por provedor e perfil; subject do Google único (uq_external_auth_identity).'),
+    ('public', 'food', 'GTIN único (V5/V6). Embalagem > 0.'),
+    ('public', 'daily_active_users', '1 linha por usuário por dia (PK); repetir o acesso no mesmo dia só mantém o primeiro horário. Cargas em lote com nexus.carga_em_lote = on não contam.'),
+    ('auditoria', 'log_alteracao', 'Somente inserção pelos triggers; não alterar nem apagar logs fora da política de retenção.')
+) AS r (schema_nome, objeto_nome, regra)
+WHERE o.banco = 'POSTGRESQL' AND o.schema_nome = r.schema_nome AND o.objeto_nome = r.objeto_nome;
 
 COMMIT;
