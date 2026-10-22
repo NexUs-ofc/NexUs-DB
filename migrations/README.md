@@ -15,7 +15,8 @@ migrations/
 ├── V5__add_gtin_to_food.sql         # adiciona GTIN único a food
 ├── V6__use_gtin_as_food_unique_identifier.sql # remove a unicidade por dados descritivos
 ├── V7__require_address_for_household_and_store.sql # exige endereço para casas e lojas
-└── V8__profile_restrictions_store_hours_billing_and_indexes.sql # perfil, horários, cobrança e índices
+├── V8__profile_restrictions_store_hours_billing_and_indexes.sql # perfil, horários, cobrança e índices
+└── V9__add_pantry_item_status.sql # status e histórico de movimentações do estoque
 ```
 
 O schema é compartilhado entre os serviços do NexUs, então o contrato do
@@ -91,3 +92,5 @@ dos serviços.
 A V8 mantém somente o índice trigram sobre LOWER(name). A IA já usa essa
 expressão; a consulta do Core deve usar LOWER para aproveitar o mesmo índice
 nas buscas da API.
+
+
