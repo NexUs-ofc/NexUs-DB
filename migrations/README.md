@@ -16,7 +16,7 @@ migrations/
 ├── V6__use_gtin_as_food_unique_identifier.sql # remove a unicidade por dados descritivos
 ├── V7__require_address_for_household_and_store.sql # exige endereço para casas e lojas
 ├── V8__profile_restrictions_store_hours_billing_and_indexes.sql # perfil, horários, cobrança e índices
-└── V9__add_pantry_item_status.sql # status e histórico de movimentações do estoque
+└── V9__food_image_url.sql # imagem do produto trazida da api
 ```
 
 O schema é compartilhado entre os serviços do NexUs, então o contrato do
