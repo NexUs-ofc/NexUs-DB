@@ -17,7 +17,7 @@ migrations/
 ├── V7__require_address_for_household_and_store.sql # exige endereço para casas e lojas
 ├── V8__profile_restrictions_store_hours_billing_and_indexes.sql # perfil, horários, cobrança e índices
 ├── V9__food_image_url.sql           # imagem do produto trazida da api
-└── V9__audit_triggers.sql           # auditoria de profile e payment (herança de tabelas)
+└── V10__audit_triggers.sql          # auditoria de profile e payment (herança de tabelas)
 ```
 
 O schema é compartilhado entre os serviços do NexUs, então o contrato do
@@ -94,7 +94,7 @@ A V8 mantém somente o índice trigram sobre LOWER(name). A IA já usa essa
 expressão; a consulta do Core deve usar LOWER para aproveitar o mesmo índice
 nas buscas da API.
 
-## V9 — auditoria
+## V10 — auditoria
 
 Triggers `AFTER INSERT OR UPDATE OR DELETE` em `profile` e `payment` gravam OLD, NEW,
 TG_OP e CURRENT_USER em `auditoria.log_profile` e `auditoria.log_payment`, filhas da tabela
