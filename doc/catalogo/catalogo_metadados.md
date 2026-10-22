@@ -16,7 +16,7 @@ Para cada tabela, view ou collection: descrição e, por coluna, **tipo**, **nul
 **chave** (PK, FK com destino, UK), **classificação LGPD** e **descrição**. Abaixo de cada tabela
 ficam as regras (checks, FKs com ação de `ON DELETE`, índices e triggers).
 
-Fonte: migrations `V1` a `V9`, `script/04_monitoramento/script_dau.sql`,
+Fonte: migrations `V1` a `V10`, `script/04_monitoramento/script_dau.sql`,
 `script/03_bi_views/datamart_estrela.sql` e as factories do dataload (MongoDB). A conferência
 catálogo × banco real está em [engenharia_de_dados.md](../engenharia_de_dados.md).
 
@@ -68,7 +68,7 @@ No banco: tabela `catalogo.nivel_acesso`, exposta em `catalogo.vw_dicionario_dad
 | [`vw_dau`](#vw_dau) | view | 2 | Monitoramento: quantidade de usuários ativos (DAU) por dia. |
 | [`category`](#category) | tabela | 2 | Domínio: categorias de alimentos (17 fixas, iguais às do supermercado). |
 | [`company`](#company) | tabela | 4 | Empresa cliente (B2B). Cada empresa é também um perfil COMPANY. |
-| [`food`](#food) | tabela | 7 | Catálogo de alimentos (SKU): produto + marca + embalagem, identificado pelo GTIN. |
+| [`food`](#food) | tabela | 8 | Catálogo de alimentos (SKU): produto + marca + embalagem, identificado pelo GTIN. |
 | [`pantry_item`](#pantry_item) | tabela | 6 | Itens na despensa, geladeira ou freezer do household hoje. Um registro por lote comprado. |
 | [`pantry_product_setting`](#pantry_product_setting) | tabela | 6 | Estoque mínimo que o household quer manter de cada alimento (gera alerta de reposição). |
 | [`payment`](#payment) | tabela | 11 | Cobranças mensais do plano de cada empresa. |
@@ -117,6 +117,7 @@ erDiagram
         numeric package_quantity
         unit_of_measure_enum unit_of_measure
         varchar gtin UK
+        varchar food_image_url
     }
     daily_active_users {
         date activity_date PK
@@ -309,6 +310,7 @@ Regras:
 | `package_quantity` | numeric(10,2) | não | — | — | INTERNO | Quantidade da embalagem, na unidade de unit_of_measure. Maior que zero. |
 | `unit_of_measure` | unit_of_measure_enum | não | — | — | INTERNO | Unidade de package_quantity (unit_of_measure_enum). |
 | `gtin` | character varying(14) | sim | — | UK | INTERNO | Código de barras GTIN/EAN (até 14 dígitos), único. Identificador natural do produto desde a V6. |
+| `food_image_url` | character varying(500) | sim | — | — | INTERNO | URL da imagem do produto, trazida da API de produtos (V9). |
 
 Regras:
 
@@ -422,7 +424,7 @@ Regras:
 - **check** `chk_profile_required_address`: `CHECK (((type <> ALL (ARRAY['HOUSEHOLD'::profile_type_enum, 'STORE'::profile_type_enum])) OR (address_id IS NOT NULL)))`
 - **FK** `profile_address_id_fkey`: ON DELETE RESTRICT
 - **trigger** `trg_profile_type_lock` → `prevent_profile_type_change()`
-- **trigger** `trg_audit_profile` → `auditoria.fn_registrar_alteracao()` (V9)
+- **trigger** `trg_audit_profile` → `auditoria.fn_registrar_alteracao()` (V10)
 
 #### `profile_phone`
 
@@ -474,7 +476,7 @@ Regras:
 | Função | Descrição | Usada por |
 |---|---|---|
 | `register_daily_activity(user_id, [momento])` | Registra o acesso/login do usuário no DAU do dia (fuso America/Sao_Paulo), sem duplicar; mantém o horário do 1º acesso. Retorna TRUE no 1º acesso do dia. Chamada pelo auth-api após autenticar e pelo trigger `trg_dau_pantry_item`. | `daily_active_users`, `pantry_item` |
-| `auditoria.fn_registrar_alteracao()` | Trigger de auditoria (V9): grava OLD, NEW, TG_OP e CURRENT_USER em `auditoria.log_<tabela>`. | `profile` (trg_audit_profile), `payment` (trg_audit_payment) |
+| `auditoria.fn_registrar_alteracao()` | Trigger de auditoria (V10): grava OLD, NEW, TG_OP e CURRENT_USER em `auditoria.log_<tabela>`. | `profile` (trg_audit_profile), `payment` (trg_audit_payment) |
 | `fn_get_expiring_products(início, fim)` | Itens de perfis ACTIVE que vencem na janela (V8). | `pantry_item` |
 | `fn_get_items_below_minimum([profile_id])` | Alimentos abaixo do mínimo configurado (V8). | `pantry_product_setting` |
 | `sp_generate_monthly_payments(...)` | Procedure: gera a cobrança mensal das empresas sem duplicar competência (V8). | `payment` |
@@ -482,7 +484,7 @@ Regras:
 | `prevent_profile_type_change()` | Trigger: impede alterar profile.type depois do cadastro. | `profile` (trg_profile_type_lock) |
 | `validate_profile_reference_type()` | Trigger: garante que profile_id aponte para um perfil do tipo passado como argumento (HOUSEHOLD, COMPANY ou STORE). | `company` (trg_company_profile_type), `pantry_item` (trg_pantry_household_type), `pantry_product_setting` (trg_pantry_product_setting_household_type), `store` (trg_store_profile_type) |
 
-### Auditoria (schema `auditoria`, V9)
+### Auditoria (schema `auditoria`, V10)
 
 Herança de tabelas: `auditoria.log_alteracao` é a tabela pai; `log_profile` e `log_payment`
 herdam as mesmas colunas e recebem os logs dos triggers `trg_audit_profile` e `trg_audit_payment`.
