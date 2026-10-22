@@ -16,17 +16,17 @@ Bancos do projeto:
 | 2c | CTEs | Concluído | **Concluído** | `kpi_d6`, `kpi_d9`, `vw_kpi_cards` e a nova `kpi_d1_evolucao_mensal`. | idem |
 | 2d | Window Functions (Running Total, Ranking) | Parcial (só ranking) | **Concluído** | Nova `bi.kpi_d1_evolucao_mensal`: running total (`SUM OVER`), `LAG`, média móvel e `RANK`. Conferido: soma dos meses = último acumulado. | idem |
 | 3a | 2 Functions + 2 Procedures | Concluído | **Concluído** | `fn_get_expiring_products`, `fn_get_items_below_minimum`, `sp_generate_monthly_payments`, `sp_update_overdue_payments` executadas; erro de parâmetro e idempotência da cobrança (57 → 0 na 2ª chamada) verificados. | `migrations/V8__...sql` |
-| 3b | Triggers de auditoria (NEW, OLD, TG_OP, CURRENT_USER) em 2 tabelas | Pendente | **Concluído** | `profile` e `payment`. INSERT/UPDATE/DELETE testados com usuário não dono; `sp_update_overdue_payments` gerou 57 logs em profile e 5 em payment. | `migrations/V9__audit_triggers.sql` |
+| 3b | Triggers de auditoria (NEW, OLD, TG_OP, CURRENT_USER) em 2 tabelas | Pendente | **Concluído** | `profile` e `payment`. INSERT/UPDATE/DELETE testados com usuário não dono; `sp_update_overdue_payments` gerou 57 logs em profile e 5 em payment. | `migrations/V10__audit_triggers.sql` |
 | 3c | EXPLAIN ANALYZE + índices | Parcial (índices da V8 sem medição) | **Concluído** | Os 5 índices da V8 medidos com e sem índice, com 400 mil itens em banco de teste e log completo (seção 4). Todos são usados. Ex.: despensa de uma casa 2.976 → 4 blocos lidos. Nenhum índice novo. | `script/06_otimizacao/explain_analyze.sql`, `doc/evidencias/explain_analyze.log` |
 | 4a | Catálogo de dados (tabelas, colunas, regras, níveis de acesso) | Parcial (desatualizado, sem nível de acesso) | **Concluído** | Corrigido `dietary_restrictions` (V8), adicionados horários de loja, auditoria e a nova view; criados `regra_negocio` e `catalogo.nivel_acesso`. Comparação automática catálogo × banco: **0 diferenças** de nome, tipo e nulidade. | `script/05_catalogo/01_estrutura.sql`, `02_metadados_postgres.sql` |
 | 4b | Backup e recuperação documentados | Pendente | **Concluído** | Seção 5. Backup, restore completo (contagens idênticas) e recuperação de linhas apagadas testados, com log completo. | este documento, `doc/evidencias/backup_restore.log` |
 | 5 | DAU automatizado no Postgres | Pendente (arquivo vazio, só no catálogo) | **Concluído no banco / falta ligar no auth-api** | Tabela, função e view como o catálogo já descrevia + trigger em `pantry_item`. Deduplicação e fuso testados. | `script/04_monitoramento/script_dau.sql` |
-| 6 | CTE recursiva ou herança | Pendente | **Concluído** | Herança: `auditoria.log_alteracao` (pai) → `log_profile`, `log_payment` (filhas). | `migrations/V9__audit_triggers.sql` |
+| 6 | CTE recursiva ou herança | Pendente | **Concluído** | Herança: `auditoria.log_alteracao` (pai) → `log_profile`, `log_payment` (filhas). | `migrations/V10__audit_triggers.sql` |
 
 ## 2. Ordem de execução
 
 ```text
-1. migrations/ (Flyway)            V1 … V9
+1. migrations/ (Flyway)            V1 … V10
 2. script/dataload                  seed-sql  e  all --perfil bi
 3. script/04_monitoramento/script_dau.sql
 4. script/03_bi_views/datamart_estrela.sql
@@ -39,7 +39,7 @@ DAU já existir; se rodar depois, só as atividades seguintes são registradas.
 
 ## 3. Auditoria, DAU e herança
 
-**Auditoria (V9).** Um trigger `AFTER INSERT OR UPDATE OR DELETE` em `profile` e `payment`
+**Auditoria (V10).** Um trigger `AFTER INSERT OR UPDATE OR DELETE` em `profile` e `payment`
 chama `auditoria.fn_registrar_alteracao()`, que grava `OLD` e `NEW` em JSONB, `TG_OP` e
 `CURRENT_USER` na tabela filha `auditoria.log_<tabela>`.
 
@@ -193,7 +193,7 @@ O `nexus_teste` restaurado aqui é o banco usado depois no teste de EXPLAIN ANAL
 
 Ambiente isolado: PostgreSQL 16.15 + PostGIS 3.4.2, a mesma versão do CI
 (`postgis/postgis:16-3.5`). Nada foi executado em bancos compartilhados. Do zero, na ordem da
-seção 2: todas as migrations aplicaram sem erro (a V9 também foi reaplicada sem erro),
+seção 2: todas as migrations aplicaram sem erro (a V10 de auditoria também foi reaplicada sem erro),
 dataload padrão + BI, DAU, data mart e catálogo. As migrations foram aplicadas com `psql`
 (uma transação por arquivo), não com o Flyway CLI; o CI aplicará com Flyway.
 
