@@ -1,6 +1,6 @@
 -- =============================================================================
 -- NexUs — Catálogo de metadados (2/3): tabelas e views do PostgreSQL
--- Migrations V1-V9 (inclui schema auditoria), monitoramento (DAU) e schemas bi e bi_hist (data mart).
+-- Migrations V1-V10 (inclui schema auditoria), monitoramento (DAU) e schemas bi e bi_hist (data mart).
 -- Pode rodar de novo quando quiser: apaga e recarrega só os metadados do PostgreSQL.
 -- Requer 01_estrutura.sql já executado.
 -- =============================================================================
@@ -44,9 +44,9 @@ INSERT INTO catalogo.objeto (banco, schema_nome, objeto_nome, tipo_objeto, descr
     ('POSTGRESQL', 'bi', 'vw_volume_tabelas', 'VIEW', 'Teste de volume: registros por tabela e se atinge 500.'),
     ('POSTGRESQL', 'bi_hist', 'registro_estoque', 'TABELA', 'Histórico de saída da despensa: 1 linha por item consumido ou descartado vencido.'),
     ('POSTGRESQL', 'bi', 'kpi_d1_evolucao_mensal', 'VIEW', 'D1 por mês com running total da perda, variação mês a mês, média móvel de 3 meses e ranking (window functions).'),
-    ('POSTGRESQL', 'auditoria', 'log_alteracao', 'TABELA', 'Tabela pai dos logs de auditoria (herança). Consultá-la retorna os logs de todas as filhas (V9).'),
-    ('POSTGRESQL', 'auditoria', 'log_profile', 'TABELA', 'Log de INSERT/UPDATE/DELETE em profile; herda as colunas de log_alteracao (V9).'),
-    ('POSTGRESQL', 'auditoria', 'log_payment', 'TABELA', 'Log de INSERT/UPDATE/DELETE em payment; herda as colunas de log_alteracao (V9).');
+    ('POSTGRESQL', 'auditoria', 'log_alteracao', 'TABELA', 'Tabela pai dos logs de auditoria (herança). Consultá-la retorna os logs de todas as filhas (V10).'),
+    ('POSTGRESQL', 'auditoria', 'log_profile', 'TABELA', 'Log de INSERT/UPDATE/DELETE em profile; herda as colunas de log_alteracao (V10).'),
+    ('POSTGRESQL', 'auditoria', 'log_payment', 'TABELA', 'Log de INSERT/UPDATE/DELETE em payment; herda as colunas de log_alteracao (V10).');
 
 -- ------------------------------------------------------------------ colunas
 -- public.address
@@ -133,7 +133,8 @@ CROSS JOIN (VALUES
     ('product_brand', 4, 'character varying(100)', TRUE, NULL, NULL, NULL, 'INTERNO', 'Marca do produto; nulo para itens a granel.'),
     ('package_quantity', 5, 'numeric(10,2)', FALSE, NULL, NULL, NULL, 'INTERNO', 'Quantidade da embalagem, na unidade de unit_of_measure. Maior que zero.'),
     ('unit_of_measure', 6, 'unit_of_measure_enum', FALSE, NULL, NULL, NULL, 'INTERNO', 'Unidade de package_quantity (unit_of_measure_enum).'),
-    ('gtin', 7, 'character varying(14)', TRUE, NULL, 'UK', NULL, 'INTERNO', 'Código de barras GTIN/EAN (até 14 dígitos), único. Identificador natural do produto desde a V6.')
+    ('gtin', 7, 'character varying(14)', TRUE, NULL, 'UK', NULL, 'INTERNO', 'Código de barras GTIN/EAN (até 14 dígitos), único. Identificador natural do produto desde a V6.'),
+    ('food_image_url', 8, 'character varying(500)', TRUE, NULL, NULL, NULL, 'INTERNO', 'URL da imagem do produto, trazida da API de produtos (V9).')
 ) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
 WHERE o.banco = 'POSTGRESQL' AND o.schema_nome = 'public' AND o.objeto_nome = 'food';
 
