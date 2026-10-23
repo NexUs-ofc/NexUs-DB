@@ -1,0 +1,123 @@
+Teste de backup e recuperação — NexUs-DB
+Data: 2026-10-19 11:57:48 -03
+Ambiente: PostgreSQL isolado de teste (16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)). O banco 'nexus' é uma cópia de
+teste com migrations V1-V9 + dataload; nenhum banco compartilhado foi usado. Credenciais via variáveis de ambiente.
+
+=================== 1. Estado do banco de origem antes do backup
+$ psql -d nexus -c "SELECT (SELECT count(*) FROM profile) AS profile, (SELECT count(*) FROM payment) AS payment, (SELECT count(*) FROM pantry_item) AS pantry_item, (SELECT count(*) FROM food) AS food, (SELECT count(*) FROM auditoria.log_alteracao) AS auditoria, (SELECT count(*) FROM daily_active_users) AS dau, (SELECT count(*) FROM catalogo.coluna) AS catalogo"
+ profile | payment | pantry_item | food | auditoria | dau | catalogo 
+---------+---------+-------------+------+-----------+-----+----------
+     643 |     598 |         670 |  560 |      1241 |   0 |      327
+(1 row)
+
+=================== 2. Backup (formato custom, comprimido)
+$ time pg_dump -d nexus -Fc -Z 6 -f nexus_backup.dump
+
+real	0m0.264s
+user	0m0.078s
+sys	0m0.009s
+(código de saída: 0)
+
+$ ls -lh nexus_backup.dump
+-rw-r--r-- 1 root root 291K Oct 19 11:57 nexus_backup.dump
+(código de saída: 0)
+
+$ pg_restore -l nexus_backup.dump | grep -c 'TABLE DATA'   # tabelas com dados no arquivo
+21
+
+$ pg_restore -l nexus_backup.dump | grep -E 'SCHEMA - (auditoria|bi|catalogo|rpa|bi_hist)'
+8; 2615 50603 SCHEMA - auditoria postgres
+12; 2615 50685 SCHEMA - bi postgres
+9; 2615 50636 SCHEMA - bi_hist postgres
+13; 2615 50780 SCHEMA - catalogo postgres
+
+=================== 3. Restauração completa em um banco NOVO (nunca por cima do banco em uso)
+$ createdb nexus_teste
+(código de saída: 0)
+
+$ time pg_restore -d nexus_teste --no-owner --exit-on-error nexus_backup.dump
+
+real	0m0.681s
+user	0m0.042s
+sys	0m0.017s
+(código de saída: 0)
+
+=================== 4. Conferência: origem x restaurado (devem ser iguais)
+$ psql -d nexus -c "SELECT (SELECT count(*) FROM profile) AS profile, (SELECT count(*) FROM payment) AS payment, (SELECT count(*) FROM pantry_item) AS pantry_item, (SELECT count(*) FROM food) AS food, (SELECT count(*) FROM auditoria.log_alteracao) AS auditoria, (SELECT count(*) FROM daily_active_users) AS dau, (SELECT count(*) FROM catalogo.coluna) AS catalogo"
+ profile | payment | pantry_item | food | auditoria | dau | catalogo 
+---------+---------+-------------+------+-----------+-----+----------
+     643 |     598 |         670 |  560 |      1241 |   0 |      327
+(1 row)
+
+$ psql -d nexus_teste -c "SELECT (SELECT count(*) FROM profile) AS profile, (SELECT count(*) FROM payment) AS payment, (SELECT count(*) FROM pantry_item) AS pantry_item, (SELECT count(*) FROM food) AS food, (SELECT count(*) FROM auditoria.log_alteracao) AS auditoria, (SELECT count(*) FROM daily_active_users) AS dau, (SELECT count(*) FROM catalogo.coluna) AS catalogo"
+ profile | payment | pantry_item | food | auditoria | dau | catalogo 
+---------+---------+-------------+------+-----------+-----+----------
+     643 |     598 |         670 |  560 |      1241 |   0 |      327
+(1 row)
+
+$ psql -d nexus_teste -c "SELECT count(*) AS triggers_restaurados FROM pg_trigger WHERE tgname IN ('trg_audit_profile','trg_audit_payment','trg_dau_pantry_item','trg_profile_type_lock')"
+ triggers_restaurados 
+----------------------
+                    4
+(1 row)
+
+$ psql -d nexus_teste -c "SELECT codigo, valor, situacao FROM bi.vw_kpi_cards WHERE codigo IN ('D1','D3','D6')"
+ codigo | valor |    situacao    
+--------+-------+----------------
+ D1     | 12.31 | DENTRO_DA_META
+ D3     |  3.74 | DENTRO_DA_META
+ D6     | 53.04 | FORA_DA_META
+(3 rows)
+
+=================== 5. Recuperação de falha: pagamentos apagados por engano
+$ psql -d nexus_teste -c "SELECT min(company_id) AS empresa FROM payment"
+ empresa 
+---------
+       1
+(1 row)
+
+$ psql -d nexus_teste -c "DELETE FROM payment WHERE company_id = 1"
+DELETE 3
+$ psql -d nexus_teste -c "SELECT count(*) AS payment_apos_exclusao FROM payment"
+ payment_apos_exclusao 
+-----------------------
+                   595
+(1 row)
+
+-- A auditoria mostra o que foi apagado, quando e por quem:
+$ psql -d nexus_teste -c "SELECT operacao, registro_id, usuario, dados_antigos->>'payment_status' AS status, dados_antigos->>'amount' AS valor FROM auditoria.log_payment WHERE operacao = 'DELETE' ORDER BY id DESC LIMIT 5"
+ operacao | registro_id | usuario  | status  | valor  
+----------+-------------+----------+---------+--------
+ DELETE   |          23 | postgres | PAID    | 468.24
+ DELETE   |          14 | postgres | PAID    | 415.78
+ DELETE   |           6 | postgres | OVERDUE | 382.74
+(3 rows)
+
+-- Restaura o backup em um banco separado e copia só as linhas perdidas:
+$ createdb nexus_recuperacao_teste
+(código de saída: 0)
+
+$ pg_restore -d nexus_recuperacao_teste --no-owner --exit-on-error nexus_backup.dump
+(código de saída: 0)
+
+$ psql -d nexus_recuperacao_teste -c "\copy (SELECT * FROM payment WHERE company_id = 1) TO 'pagamentos.csv' CSV HEADER"
+COPY 3
+$ psql -d nexus_teste -c "\copy payment FROM 'pagamentos.csv' CSV HEADER"
+COPY 3
+$ psql -d nexus_teste -c "SELECT count(*) AS payment_apos_recuperacao FROM payment"
+ payment_apos_recuperacao 
+--------------------------
+                      598
+(1 row)
+
+-- payment no backup: 598
+$ psql -d nexus_teste -c "SELECT count(*) = 598 AS igual_ao_backup FROM payment"
+ igual_ao_backup 
+-----------------
+ t
+(1 row)
+
+$ dropdb nexus_recuperacao_teste
+(código de saída: 0)
+
+Resultado: backup e restauração completos sem erro, contagens idênticas; linhas apagadas recuperadas.

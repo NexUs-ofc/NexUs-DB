@@ -20,9 +20,12 @@ NexUs-DB/
 │   ├── 03_bi_views/          # data mart (star schema) para BI
 │   ├── 04_monitoramento/     # scripts de monitoramento
 │   ├── 05_catalogo/          # SQL do catálogo de metadados (schema catalogo)
+│   ├── 06_otimizacao/        # teste de índices com EXPLAIN ANALYZE (só em banco de teste)
 │   └── dataload/             # carga de dados (Postgres + Mongo)
 ├── doc/
-│   └── catalogo/             # catálogo de metadados (PostgreSQL, data mart, MongoDB)
+│   ├── catalogo/             # catálogo de metadados (PostgreSQL, data mart, MongoDB)
+│   ├── engenharia_de_dados.md # requisitos, auditoria, DAU, índices, backup e validação
+│   └── evidencias/           # logs dos testes de EXPLAIN ANALYZE e de backup/restauração
 ├── rpa/                      # RPA de migração do banco legado
 ├── requirements.txt
 └── .env                      # credenciais (não versionado)
@@ -45,7 +48,7 @@ Para cada coluna o catálogo traz tipo, nulidade, padrão, chave (PK/FK/UK), des
 |---------------|-------------|----------|
 | `INTERNO` | Dado de negócio, sem dado pessoal | `food.gtin`, `payment.amount` |
 | `PESSOAL` | Identifica ou localiza uma pessoa | `profile.email`, `address.street` |
-| `SENSIVEL` | Dado pessoal sensível (saúde, religião) | `profile.dietary_restriction` |
+| `SENSIVEL` | Dado pessoal sensível (saúde, religião) | `profile.dietary_restrictions` |
 | `SIGILOSO` | Credencial | `auth_method.credential` |
 
 Ao alterar o schema ou uma collection, atualize o catálogo no mesmo PR.
@@ -92,7 +95,7 @@ manualmente).
 | `category` | Categorias de alimentos |
 | `food` | Alimentos (produtos) do catálogo |
 | `address` | Endereços |
-| `profile` | Perfis (household, company, store, admin); inclui `dietary_restriction` (restrições alimentares do household) |
+| `profile` | Perfis (household, company, store, admin); inclui `dietary_restrictions` (lista de restrições alimentares do household, V8) |
 | `profile_phone` | Telefones do perfil |
 | `auth_method` | Métodos de autenticação (Google/senha) |
 | `plan` | Planos de assinatura |
@@ -108,6 +111,8 @@ As regras vivem em funções + triggers, não na camada de aplicação:
 
 - **`validate_profile_reference_type(tipo)`** — garante que `profile_id` de `pantry_item`, `pantry_product_setting`, `company` e `store` aponte para um profile do tipo esperado (`HOUSEHOLD`, `COMPANY`, `STORE`). Aplica via triggers de `BEFORE INSERT/UPDATE`.
 - **`prevent_profile_type_change()`** — impede que o `type` de um profile seja alterado depois de criado.
+- **Cobrança e estoque (V8)** — `fn_get_expiring_products`, `fn_get_items_below_minimum`, `sp_generate_monthly_payments` e `sp_update_overdue_payments` (contratos em [migrations/README.md](migrations/README.md)).
+- **Auditoria (V10)** — `profile` e `payment` gravam OLD, NEW, TG_OP e CURRENT_USER em `auditoria.log_profile` e `auditoria.log_payment`, filhas de `auditoria.log_alteracao` (herança).
 
 Nota sobre IDs: as tabelas usam `SERIAL PRIMARY KEY` (auto-incremento nativo do Postgres).
 
@@ -163,7 +168,7 @@ Mapeamento, tratamento de falhas e configuração em [rpa/README.md](rpa/README.
 - Crie um `.env` na raiz com as credenciais de PostgreSQL e MongoDB (o `.env` é o único arquivo ignorado no `.gitignore`).
 - Aplique o schema com Flyway (`migrations/`) antes de rodar o dataload.
 
-## Em andamento / placeholders
+## Engenharia de dados
 
-- `script/04_monitoramento/script_dau.sql` — métrica de DAU, ainda sem conteúdo.
-- `profile.dietary_restriction` — documentado no catálogo, ainda sem migration (próxima: V8).
+Matriz de requisitos, auditoria (triggers com herança), DAU, EXPLAIN ANALYZE, backup e
+recuperação e como tudo foi validado: [doc/engenharia_de_dados.md](doc/engenharia_de_dados.md).

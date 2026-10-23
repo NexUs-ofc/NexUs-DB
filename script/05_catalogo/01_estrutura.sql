@@ -1,7 +1,7 @@
 -- =============================================================================
 -- NexUs — Catálogo de metadados (1/3): estrutura
--- Recria o schema `catalogo` do zero: tabelas catalogo.objeto e catalogo.coluna
--- e a view catalogo.vw_dicionario_dados. Apaga os dados do catálogo, então rode
+-- Recria o schema `catalogo` do zero: tabelas catalogo.objeto, catalogo.coluna e
+-- catalogo.nivel_acesso e a view catalogo.vw_dicionario_dados. Apaga os dados do catálogo, então rode
 -- 02 e 03 em seguida. Não altera nenhuma tabela do app.
 -- =============================================================================
 BEGIN;
@@ -17,6 +17,7 @@ CREATE TABLE catalogo.objeto (
     objeto_nome    VARCHAR(63)  NOT NULL,
     tipo_objeto    VARCHAR(20)  NOT NULL CHECK (tipo_objeto IN ('TABELA', 'VIEW', 'COLLECTION')),
     descricao      TEXT         NOT NULL,
+    regra_negocio  TEXT,
     CONSTRAINT uq_catalogo_objeto UNIQUE (banco, schema_nome, objeto_nome),
     CONSTRAINT ck_catalogo_objeto_schema CHECK ((banco = 'POSTGRESQL') = (schema_nome IS NOT NULL))
 );
@@ -38,7 +39,28 @@ CREATE TABLE catalogo.coluna (
     CONSTRAINT uq_catalogo_coluna_posicao UNIQUE (objeto_id, posicao)
 );
 
+-- Nível de acesso de cada classificação LGPD: quem pode ler a coluna e como.
+CREATE TABLE catalogo.nivel_acesso (
+    classificacao_lgpd VARCHAR(10) PRIMARY KEY
+                       CHECK (classificacao_lgpd IN ('INTERNO', 'PESSOAL', 'SENSIVEL', 'SIGILOSO')),
+    nivel              SMALLINT     NOT NULL UNIQUE,
+    quem_acessa        TEXT         NOT NULL,
+    regra              TEXT         NOT NULL
+);
+
+INSERT INTO catalogo.nivel_acesso VALUES
+    ('INTERNO',  1, 'Serviços do NexUs, equipe de dados e BI', 'Pode ir para o data mart e dashboards.'),
+    ('PESSOAL',  2, 'Serviços do NexUs e suporte, para o próprio titular', 'Não vai para o BI; só sai do banco mascarado ou agregado.'),
+    ('SENSIVEL', 3, 'Serviços do NexUs, para o próprio titular', 'Exige consentimento; nunca vai para BI, logs ou exportações.'),
+    ('SIGILOSO', 4, 'Somente o serviço de autenticação (auth-api)', 'Nunca é lido por pessoas nem exibido; guardar só hash ou subject.');
+
+ALTER TABLE catalogo.coluna
+    ADD CONSTRAINT fk_catalogo_coluna_nivel
+    FOREIGN KEY (classificacao_lgpd) REFERENCES catalogo.nivel_acesso (classificacao_lgpd);
+
+COMMENT ON TABLE catalogo.nivel_acesso IS 'Níveis de acesso: quem pode acessar cada classificação LGPD.';
 COMMENT ON TABLE catalogo.objeto IS 'Tabelas, views e collections do NexUs.';
+COMMENT ON COLUMN catalogo.objeto.regra_negocio IS 'Regras de negócio aplicadas no banco (checks, triggers, procedures).';
 COMMENT ON COLUMN catalogo.objeto.id IS 'Identificador do objeto no catálogo.';
 COMMENT ON COLUMN catalogo.objeto.banco IS 'POSTGRESQL ou MONGODB.';
 COMMENT ON COLUMN catalogo.objeto.schema_nome IS 'Schema do PostgreSQL (public, bi, bi_hist); nulo para MongoDB.';
@@ -62,10 +84,12 @@ COMMENT ON COLUMN catalogo.coluna.descricao IS 'Significado da coluna.';
 -- Dicionário completo: uma linha por coluna, com o objeto dono.
 CREATE VIEW catalogo.vw_dicionario_dados AS
 SELECT o.banco, o.schema_nome, o.objeto_nome, o.tipo_objeto, o.descricao AS descricao_objeto,
+       o.regra_negocio,
        c.posicao, c.coluna_nome, c.tipo_dado, c.aceita_nulo, c.valor_padrao, c.chave, c.referencia,
-       c.classificacao_lgpd, c.descricao AS descricao_coluna
+       c.classificacao_lgpd, n.nivel AS nivel_acesso, n.quem_acessa, c.descricao AS descricao_coluna
 FROM catalogo.objeto o
-JOIN catalogo.coluna c ON c.objeto_id = o.id;
+JOIN catalogo.coluna c ON c.objeto_id = o.id
+JOIN catalogo.nivel_acesso n ON n.classificacao_lgpd = c.classificacao_lgpd;
 
 COMMENT ON VIEW catalogo.vw_dicionario_dados IS 'Dicionário de dados completo: uma linha por coluna, com o objeto dono.';
 
