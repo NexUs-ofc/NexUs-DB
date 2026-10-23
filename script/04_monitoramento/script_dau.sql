@@ -34,6 +34,7 @@ AS $$
 $$;
 
 -- Item novo conta no dia em que entrou na despensa; alteração conta no dia de hoje.
+-- created_at no futuro (dado inconsistente) conta como hoje: o DAU nunca registra um dia que ainda não chegou.
 -- Opcional: uma carga em lote pode rodar SET nexus.carga_em_lote = 'on' para não contar como acesso.
 CREATE OR REPLACE FUNCTION fn_dau_pantry_item() RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -44,7 +45,7 @@ BEGIN
     END IF;
     PERFORM register_daily_activity(
         NEW.profile_id,
-        CASE WHEN TG_OP = 'INSERT' THEN NEW.created_at::TIMESTAMPTZ ELSE now() END);
+        CASE WHEN TG_OP = 'INSERT' THEN LEAST(NEW.created_at::TIMESTAMPTZ, now()) ELSE now() END);
     RETURN NULL;
 END;
 $$;
