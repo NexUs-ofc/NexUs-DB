@@ -74,7 +74,8 @@ SELECT * FROM vw_dau ORDER BY activity_date DESC LIMIT 30;
 ```
 
 Testado: 4 registros do mesmo usuário no mesmo dia → 1 linha; 23:30 de São Paulo (02:30
-UTC do dia seguinte) conta no dia correto; com `nexus.carga_em_lote = 'on'` nenhum registro novo.
+UTC do dia seguinte) conta no dia correto; com `nexus.carga_em_lote = 'on'` nenhum registro novo;
+item com `created_at` no futuro (a carga de BI pode gerar um) conta como hoje, então nenhum dia futuro aparece em `vw_dau`.
 
 ## 4. Otimização (EXPLAIN ANALYZE)
 
