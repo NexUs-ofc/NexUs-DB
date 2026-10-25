@@ -319,20 +319,20 @@ Regras:
 
 #### `pantry_item`
 
-*tabela* — Itens na despensa, geladeira ou freezer do household hoje. Um registro por lote comprado.
+*tabela* — Lotes de estoque do household, inclusive encerrados com saldo zero. A API lista apenas lotes com saldo positivo.
 
 | Coluna | Tipo | Nulo | Padrão | Chave | LGPD | Descrição |
 |---|---|---|---|---|---|---|
 | `id` | integer | não | nextval('pantry_item_id_seq'::regclass) | PK | INTERNO | Identificador do item (serial). |
 | `food_id` | integer | não | — | FK → `food.id` | INTERNO | Alimento (FK food.id). |
 | `profile_id` | integer | não | — | FK → `profile.id` | INTERNO | Household dono do item (FK profile.id, cascata). |
-| `quantity` | integer | não | — | — | INTERNO | Quantidade de embalagens. Maior que zero. |
+| `quantity` | integer | não | — | — | INTERNO | Saldo não negativo de embalagens. Zero preserva o lote e o histórico, mas não aparece no estoque disponível. |
 | `expiry_date` | date | sim | — | — | INTERNO | Data de validade; nulo quando o produto não tem validade impressa (granel, feira). |
 | `created_at` | timestamp without time zone | não | CURRENT_TIMESTAMP | — | INTERNO | Quando o item entrou na despensa (compra). |
 
 Regras:
 
-- **check** `pantry_item_quantity_check`: `CHECK ((quantity > 0))`
+- **check** `pantry_item_quantity_check`: `CHECK ((quantity >= 0))`
 - **FK** `pantry_item_food_id_fkey`: ON DELETE NO ACTION
 - **FK** `pantry_item_profile_id_fkey`: ON DELETE CASCADE
 - **trigger** `trg_pantry_household_type` → `validate_profile_reference_type('HOUSEHOLD')`
@@ -513,7 +513,7 @@ Modelo em estrela: os fatos apontam para as dimensões pelas colunas `sk_*`; cha
 
 | Objeto | Camada | Colunas | Descrição |
 |---|---|---|---|
-| [`bi_hist.registro_estoque`](#bi_histregistro_estoque) | histórico | 10 | Histórico de saída da despensa: 1 linha por item consumido ou descartado vencido. |
+| [`bi_hist.registro_estoque`](#bi_histregistro_estoque) | histórico | 6 | Uma linha por operação de consumo ou descarte, ligada ao lote preservado em pantry_item. |
 | [`bi.dim_alimento`](#bidim_alimento) | dimensão | 7 | Dimensão alimento (food) com a categoria desnormalizada. |
 | [`bi.dim_empresa`](#bidim_empresa) | dimensão | 5 | Dimensão empresa com o plano desnormalizado. |
 | [`bi.dim_localidade`](#bidim_localidade) | dimensão | 7 | Dimensão localidade (address) sem rua, número nem CEP. sk_localidade = -1 é "não informado". |
@@ -538,28 +538,25 @@ Modelo em estrela: os fatos apontam para as dimensões pelas colunas `sk_*`; cha
 
 #### `bi_hist.registro_estoque`
 
-*tabela* — Histórico de saída da despensa: 1 linha por item consumido ou descartado vencido.
+*tabela* — Histórico de saídas. O Core grava operações reais, inclusive parciais, na mesma transação da baixa de saldo. A carga BI grava simulações no mesmo contrato, identificáveis pelo perfil de origem.
 
 | Coluna | Tipo | Nulo | Padrão | Chave | LGPD | Descrição |
 |---|---|---|---|---|---|---|
 | `id` | integer | não | nextval('bi_hist.registro_estoque_id_seq'::regclass) | PK | INTERNO | Identificador do registro (serial). |
-| `profile_id` | integer | não | — | FK → `profile.id` | INTERNO | Household (FK profile.id, cascata). |
-| `food_id` | integer | não | — | FK → `food.id` | INTERNO | Alimento (FK food.id). |
-| `event_type` | character varying(30) | não | — | — | INTERNO | item_consumed ou item_expired (mesmos valores de records no MongoDB). |
-| `event_date` | timestamp without time zone | não | — | — | INTERNO | Quando o item foi consumido ou descartado. |
-| `purchase_date` | timestamp without time zone | não | — | — | INTERNO | Quando o item entrou na despensa. |
-| `expiry_date` | date | sim | — | — | INTERNO | Validade do item; nulo se não tinha validade. |
-| `consumed_quantity` | integer | não | 0 | — | INTERNO | Embalagens consumidas (item_consumed). |
-| `discarded_quantity` | integer | não | 0 | — | INTERNO | Embalagens descartadas (item_expired). |
-| `estimated_loss` | numeric(10,2) | não | 0 | — | INTERNO | Perda estimada em R$ com o descarte. |
+| `pantry_item_id` | integer | não | — | FK → `pantry_item.id` | INTERNO | Lote movimentado. Perfil, alimento, entrada e validade são obtidos pelo lote. |
+| `event_type` | character varying(30) | não | — | — | INTERNO | CONSUMED: consumo; DISCARDED: descarte, mesmo sem vencimento. |
+| `quantity` | integer | não | — | — | INTERNO | Embalagens movimentadas, maior que zero e limitada pelo saldo validado pelo Core. |
+| `event_date` | timestamp without time zone | não | CURRENT_TIMESTAMP | — | INTERNO | Data e hora definidas pelo servidor. |
+| `estimated_loss` | numeric(10,2) | sim | — | — | INTERNO | Perda monetária quando conhecida. Valores antigos preservados; o Core não calcula perdas sem preço de compra. |
 
 Regras:
 
-- **check** `registro_estoque_consumed_quantity_check`: `CHECK ((consumed_quantity >= 0))`
-- **check** `registro_estoque_discarded_quantity_check`: `CHECK ((discarded_quantity >= 0))`
-- **check** `registro_estoque_event_type_check`: `CHECK (((event_type)::text = ANY ((ARRAY['item_consumed'::character varying, 'item_expired'::character varying])::text[])))`
-- **FK** `registro_estoque_food_id_fkey`: ON DELETE NO ACTION
-- **FK** `registro_estoque_profile_id_fkey`: ON DELETE CASCADE
+- **check** `registro_estoque_quantity_check`: `CHECK (quantity > 0)`
+- **check** `registro_estoque_event_type_check`: somente CONSUMED ou DISCARDED.
+- **FK** `registro_estoque_pantry_item_id_fkey`: ON DELETE RESTRICT.
+- O saldo do lote pode chegar a zero; o lote e seus movimentos são preservados.
+- Correções de saldo e remoções manuais não são tratadas automaticamente como consumo ou descarte.
+- A migration V11 vincula registros antigos a lotes encerrados e adapta somente as views dependentes. As fórmulas dos KPIs ainda contam movimentos, não unidades.
 
 ### Dimensões
 
@@ -689,8 +686,8 @@ Regras:
 | `sk_data_evento` | integer | sim | — | — | INTERNO | FK dim_tempo: consumo ou descarte. |
 | `sk_data_compra` | integer | sim | — | — | INTERNO | FK dim_tempo: compra. |
 | `sk_data_validade` | integer | sim | — | — | INTERNO | FK dim_tempo: validade (-1 sem validade). |
-| `tipo_evento` | character varying(30) | sim | — | — | INTERNO | item_consumed ou item_expired. |
-| `expirado` | integer | sim | — | — | INTERNO | 1 se foi descartado vencido. |
+| `tipo_evento` | character varying(30) | sim | — | — | INTERNO | CONSUMED ou DISCARDED. |
+| `expirado` | integer | sim | — | — | INTERNO | Nome histórico da flag: 1 para DISCARDED, mesmo sem vencimento. |
 | `consumido` | integer | sim | — | — | INTERNO | 1 se foi consumido. |
 | `qtd_consumida` | integer | sim | — | — | INTERNO | Embalagens consumidas. |
 | `qtd_descartada` | integer | sim | — | — | INTERNO | Embalagens descartadas. |
@@ -930,8 +927,8 @@ Listas de compras, avulsas ou geradas a partir de um evento.
 
 #### `records`
 
-Movimentos de estoque do household. `item_consumed` e `item_expired` são os mesmos eventos que o
-BI lê de `bi_hist.registro_estoque` (KPIs D1 e D9).
+Logs de atividade do Core e exemplos simulados. Não alimentam automaticamente o BI. Os movimentos reais
+de consumo/descarte são gravados separadamente em `bi_hist.registro_estoque` no PostgreSQL.
 
 | Campo | Tipo | Obrigatório | LGPD | Descrição |
 |---|---|---|---|---|

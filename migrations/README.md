@@ -17,7 +17,8 @@ migrations/
 ├── V7__require_address_for_household_and_store.sql # exige endereço para casas e lojas
 ├── V8__profile_restrictions_store_hours_billing_and_indexes.sql # perfil, horários, cobrança e índices
 ├── V9__food_image_url.sql           # imagem do produto trazida da api
-└── V10__audit_triggers.sql          # auditoria de profile e payment (herança de tabelas)
+├── V10__audit_triggers.sql          # auditoria de profile e payment (herança de tabelas)
+└── V11__record_stock_movements_and_preserve_empty_items.sql # movimentos reais e lotes com saldo zero
 ```
 
 O schema é compartilhado entre os serviços do NexUs, então o contrato do
@@ -46,6 +47,14 @@ histórico (`flyway_schema_history`) e aplica todas as migrations em sequência.
 
 Novas mudanças de schema devem ser adicionadas com a próxima versão disponível,
 nunca alterando os arquivos já aplicados.
+
+## V11 — movimentos de estoque
+
+Permite saldo zero em pantry_item e registra CONSUMED ou DISCARDED com uma única quantity positiva em bi_hist.registro_estoque, ligada somente ao lote. O Core atualiza saldo e histórico na mesma transação e preserva lotes zerados fora das listagens.
+
+Em bases com histórico antigo, a migration cria lotes encerrados para preservar os registros existentes, unifica as quantidades e converte os tipos. Quantidades inconsistentes com o tipo abortam a conversão. A perda monetária antiga é preservada; novas operações podem não ter estimated_loss.
+
+Somente fato_movimento, dim_tempo e fato_estoque são adaptadas quando já existem. As fórmulas dos indicadores ficam para depois. Aplique a V11 antes de publicar o Core. Detalhes em doc/movimentacoes_estoque.md.
 
 ## V8 — perfil, lojas, cobrança e desempenho
 
