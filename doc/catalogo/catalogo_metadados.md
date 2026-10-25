@@ -16,8 +16,9 @@ Para cada tabela, view ou collection: descrição e, por coluna, **tipo**, **nul
 **chave** (PK, FK com destino, UK), **classificação LGPD** e **descrição**. Abaixo de cada tabela
 ficam as regras (checks, FKs com ação de `ON DELETE`, índices e triggers).
 
-Fonte: migrations `V1` a `V7`, `script/03_bi_views/datamart_estrela.sql` e as factories do
-dataload (MongoDB). Exceção: `profile.dietary_restriction` ainda não existe nas migrations.
+Fonte: migrations `V1` a `V10`, `script/04_monitoramento/script_dau.sql`,
+`script/03_bi_views/datamart_estrela.sql` e as factories do dataload (MongoDB). A conferência
+catálogo × banco real está em [engenharia_de_dados.md](../engenharia_de_dados.md).
 
 ### Classificação LGPD
 
@@ -25,8 +26,20 @@ dataload (MongoDB). Exceção: `profile.dietary_restriction` ainda não existe n
 |---|---|---|
 | `INTERNO` | Dado de negócio, sem dado pessoal | `food.gtin`, `payment.amount` |
 | `PESSOAL` | Identifica ou localiza uma pessoa (art. 5º, I) | `profile.email`, `address.street`, `profile_phone.phone` |
-| `SENSIVEL` | Dado pessoal sensível: saúde, religião (art. 5º, II) | `profile.dietary_restriction` |
+| `SENSIVEL` | Dado pessoal sensível: saúde, religião (art. 5º, II) | `profile.dietary_restrictions` |
 | `SIGILOSO` | Credencial; nunca sai da aplicação | `auth_method.credential` |
+
+### Níveis de acesso
+
+No banco: tabela `catalogo.nivel_acesso`, exposta em `catalogo.vw_dicionario_dados`
+(colunas `nivel_acesso` e `quem_acessa`). Cada objeto também tem `regra_negocio`.
+
+| Nível | Classificação | Quem acessa | Regra |
+|---|---|---|---|
+| 1 | `INTERNO` | Serviços do NexUs, equipe de dados e BI | Pode ir para o data mart e dashboards. |
+| 2 | `PESSOAL` | Serviços do NexUs e suporte, para o próprio titular | Não vai para o BI; só sai do banco mascarado ou agregado. |
+| 3 | `SENSIVEL` | Serviços do NexUs, para o próprio titular | Exige consentimento; nunca vai para BI, logs ou exportações. |
+| 4 | `SIGILOSO` | Somente o serviço de autenticação (auth-api) | Nunca é lido por pessoas nem exibido; guardar só hash ou subject. |
 
 ### Glossário
 
@@ -55,7 +68,7 @@ dataload (MongoDB). Exceção: `profile.dietary_restriction` ainda não existe n
 | [`vw_dau`](#vw_dau) | view | 2 | Monitoramento: quantidade de usuários ativos (DAU) por dia. |
 | [`category`](#category) | tabela | 2 | Domínio: categorias de alimentos (17 fixas, iguais às do supermercado). |
 | [`company`](#company) | tabela | 4 | Empresa cliente (B2B). Cada empresa é também um perfil COMPANY. |
-| [`food`](#food) | tabela | 7 | Catálogo de alimentos (SKU): produto + marca + embalagem, identificado pelo GTIN. |
+| [`food`](#food) | tabela | 8 | Catálogo de alimentos (SKU): produto + marca + embalagem, identificado pelo GTIN. |
 | [`pantry_item`](#pantry_item) | tabela | 6 | Itens na despensa, geladeira ou freezer do household hoje. Um registro por lote comprado. |
 | [`pantry_product_setting`](#pantry_product_setting) | tabela | 6 | Estoque mínimo que o household quer manter de cada alimento (gera alerta de reposição). |
 | [`payment`](#payment) | tabela | 11 | Cobranças mensais do plano de cada empresa. |
@@ -104,6 +117,7 @@ erDiagram
         numeric package_quantity
         unit_of_measure_enum unit_of_measure
         varchar gtin UK
+        varchar food_image_url
     }
     daily_active_users {
         date activity_date PK
@@ -158,7 +172,7 @@ erDiagram
         profile_type_enum type
         varchar profile_image_url
         profile_status_enum status
-        text dietary_restriction
+        text[] dietary_restrictions
     }
     profile_phone {
         integer profile_id FK,PK
@@ -169,6 +183,8 @@ erDiagram
         char cnpj UK
         integer company_id FK
         integer profile_id FK,UK
+        time opening_time
+        time closing_time
     }
     profile ||--o{ auth_method : "profile_id"
     plan ||--o{ company : "plan_id"
@@ -294,6 +310,7 @@ Regras:
 | `package_quantity` | numeric(10,2) | não | — | — | INTERNO | Quantidade da embalagem, na unidade de unit_of_measure. Maior que zero. |
 | `unit_of_measure` | unit_of_measure_enum | não | — | — | INTERNO | Unidade de package_quantity (unit_of_measure_enum). |
 | `gtin` | character varying(14) | sim | — | UK | INTERNO | Código de barras GTIN/EAN (até 14 dígitos), único. Identificador natural do produto desde a V6. |
+| `food_image_url` | character varying(500) | sim | — | — | INTERNO | URL da imagem do produto, trazida da API de produtos (V9). |
 
 Regras:
 
@@ -400,15 +417,14 @@ Regras:
 | `type` | profile_type_enum | não | — | — | INTERNO | Tipo do perfil (profile_type_enum). Imutável. |
 | `profile_image_url` | character varying(500) | sim | — | — | PESSOAL | URL da foto de perfil. |
 | `status` | profile_status_enum | não | 'ACTIVE'::profile_status_enum | — | INTERNO | Situação do perfil (profile_status_enum). Padrão ACTIVE. |
-| `dietary_restriction` | text | sim | — | — | SENSIVEL | Restrições alimentares declaradas pelo household (alergias, intolerâncias, dietas, condições de saúde ou religiosas). Ex.: lactose, glúten, vegano. Nulo = não informou. |
+| `dietary_restrictions` | text[] | não | '{}'::text[] | — | SENSIVEL | Lista de códigos de restrição alimentar do household (alergias, intolerâncias, dietas, condições de saúde ou religiosas), V8. O catálogo de códigos fica no frontend. Lista vazia = nenhuma. |
 
 Regras:
 
 - **check** `chk_profile_required_address`: `CHECK (((type <> ALL (ARRAY['HOUSEHOLD'::profile_type_enum, 'STORE'::profile_type_enum])) OR (address_id IS NOT NULL)))`
 - **FK** `profile_address_id_fkey`: ON DELETE RESTRICT
 - **trigger** `trg_profile_type_lock` → `prevent_profile_type_change()`
-
-> **`dietary_restriction`**: campo do `profile` que ainda não está nas migrations (V1–V7). Para criá-lo no banco: `ALTER TABLE profile ADD COLUMN dietary_restriction TEXT;` numa nova migration (V8).
+- **trigger** `trg_audit_profile` → `auditoria.fn_registrar_alteracao()` (V10)
 
 #### `profile_phone`
 
@@ -434,6 +450,8 @@ Regras:
 | `cnpj` | character(14) | não | — | UK | INTERNO | CNPJ da filial com 14 dígitos, sem máscara, único. |
 | `company_id` | integer | não | — | FK → `company.id` | INTERNO | Empresa dona da loja (FK company.id, cascata). |
 | `profile_id` | integer | não | — | FK → `profile.id`, UK | INTERNO | Perfil STORE da loja (FK profile.id, 1:1). |
+| `opening_time` | time without time zone | sim | — | — | INTERNO | Horário de abertura, igual para todos os dias (V8). Nulo junto com closing_time. |
+| `closing_time` | time without time zone | sim | — | — | INTERNO | Horário de fechamento, posterior à abertura (V8). Nulo junto com opening_time. |
 
 Regras:
 
@@ -441,6 +459,7 @@ Regras:
 - **FK** `store_company_id_fkey`: ON DELETE CASCADE
 - **FK** `store_profile_id_fkey`: ON DELETE NO ACTION
 - **trigger** `trg_store_profile_type` → `validate_profile_reference_type('STORE')`
+- **check** `chk_store_business_hours`: abertura e fechamento ambos nulos, ou ambos preenchidos com fechamento > abertura (V8)
 
 ### Tipos enumerados
 
@@ -456,9 +475,33 @@ Regras:
 
 | Função | Descrição | Usada por |
 |---|---|---|
-| `register_daily_activity(user_id, [data])` | Registra o acesso/login do usuário no DAU do dia (`INSERT ... ON CONFLICT DO NOTHING`). Retorna TRUE no 1º acesso do dia. Chamada pelos serviços após autenticar. | `daily_active_users` |
+| `register_daily_activity(user_id, [momento])` | Registra o acesso/login do usuário no DAU do dia (fuso America/Sao_Paulo), sem duplicar; mantém o horário do 1º acesso. Retorna TRUE no 1º acesso do dia. Chamada pelo auth-api após autenticar e pelo trigger `trg_dau_pantry_item`. | `daily_active_users`, `pantry_item` |
+| `auditoria.fn_registrar_alteracao()` | Trigger de auditoria (V10): grava OLD, NEW, TG_OP e CURRENT_USER em `auditoria.log_<tabela>`. | `profile` (trg_audit_profile), `payment` (trg_audit_payment) |
+| `fn_get_expiring_products(início, fim)` | Itens de perfis ACTIVE que vencem na janela (V8). | `pantry_item` |
+| `fn_get_items_below_minimum([profile_id])` | Alimentos abaixo do mínimo configurado (V8). | `pantry_product_setting` |
+| `sp_generate_monthly_payments(...)` | Procedure: gera a cobrança mensal das empresas sem duplicar competência (V8). | `payment` |
+| `sp_update_overdue_payments(...)` | Procedure: marca cobranças vencidas e bloqueia/reativa empresa e lojas (V8). | `payment`, `profile` |
 | `prevent_profile_type_change()` | Trigger: impede alterar profile.type depois do cadastro. | `profile` (trg_profile_type_lock) |
 | `validate_profile_reference_type()` | Trigger: garante que profile_id aponte para um perfil do tipo passado como argumento (HOUSEHOLD, COMPANY ou STORE). | `company` (trg_company_profile_type), `pantry_item` (trg_pantry_household_type), `pantry_product_setting` (trg_pantry_product_setting_household_type), `store` (trg_store_profile_type) |
+
+### Auditoria (schema `auditoria`, V10)
+
+Herança de tabelas: `auditoria.log_alteracao` é a tabela pai; `log_profile` e `log_payment`
+herdam as mesmas colunas e recebem os logs dos triggers `trg_audit_profile` e `trg_audit_payment`.
+Consultar a pai retorna os logs de todas as filhas.
+
+| Coluna | Tipo | Nulo | Padrão | Chave | LGPD | Descrição |
+|---|---|---|---|---|---|---|
+| `id` | bigint | não | nextval('auditoria.log_alteracao_id_seq'::regclass) | PK (nas filhas) | INTERNO | Identificador do log (sequence compartilhada). |
+| `tabela` | character varying(63) | não | — | — | INTERNO | Tabela alterada (TG_TABLE_NAME). |
+| `operacao` | character varying(6) | não | — | — | INTERNO | INSERT, UPDATE ou DELETE (TG_OP). |
+| `registro_id` | integer | sim | — | — | INTERNO | id do registro alterado. |
+| `dados_antigos` | jsonb | sim | — | — | SENSIVEL | Linha antes da alteração (OLD); nulo no INSERT. |
+| `dados_novos` | jsonb | sim | — | — | SENSIVEL | Linha depois da alteração (NEW); nulo no DELETE. |
+| `usuario` | character varying(63) | não | — | — | INTERNO | Usuário do banco que alterou (CURRENT_USER). |
+| `alterado_em` | timestamp with time zone | não | clock_timestamp() | — | INTERNO | Momento exato da alteração. |
+
+Regras: somente inserção pelos triggers; cada filha tem a própria PK em `id`.
 
 ---
 
@@ -482,6 +525,7 @@ Modelo em estrela: os fatos apontam para as dimensões pelas colunas `sk_*`; cha
 | [`bi.fato_movimento`](#bifato_movimento) | fato | 14 | Fato movimento. Grão: 1 item consumido ou descartado (bi_hist.registro_estoque). |
 | [`bi.fato_pagamento`](#bifato_pagamento) | fato | 8 | Fato pagamento. Grão: 1 cobrança mensal. |
 | [`bi.kpi_d1_desperdicio_mensal`](#bikpi_d1_desperdicio_mensal) | KPI | 6 | D1: taxa de desperdício = expirados / (expirados + consumidos), por mês e região. |
+| [`bi.kpi_d1_evolucao_mensal`](#bikpi_d1_evolucao_mensal) | KPI | 9 | D1 por mês com running total da perda, variação (LAG), média móvel e ranking. |
 | [`bi.kpi_d3_d4_d8_validade_uf`](#bikpi_d3_d4_d8_validade_uf) | KPI | 10 | D3 (% vencidos), D4 (% a vencer em 7 dias) e D8 (% sem validade) dos itens na despensa, por UF. |
 | [`bi.kpi_d5_ranking_vencimento_uf`](#bikpi_d5_ranking_vencimento_uf) | KPI | 6 | D5: ranking de UFs por itens vencidos ou a vencer em 30 dias. |
 | [`bi.kpi_d6_estoque_minimo_uf`](#bikpi_d6_estoque_minimo_uf) | KPI | 5 | D6: % de households com algum alimento abaixo do mínimo, por UF. |
@@ -682,6 +726,22 @@ Regras:
 | `itens_consumidos` | bigint | sim | — | — | INTERNO | Itens consumidos. |
 | `taxa_desperdicio_pct` | numeric | sim | — | — | INTERNO | D1 em %. |
 | `perda_estimada_rs` | numeric | sim | — | — | INTERNO | Perda estimada em R$. |
+
+#### `bi.kpi_d1_evolucao_mensal`
+
+*view* — D1 por mês com window functions: running total (`SUM() OVER`), `LAG`, média móvel de 3 meses e `RANK`.
+
+| Coluna | Tipo | Nulo | Padrão | Chave | LGPD | Descrição |
+|---|---|---|---|---|---|---|
+| `ano_mes` | text | sim | — | — | INTERNO | Mês do evento (AAAA-MM). |
+| `itens_expirados` | bigint | sim | — | — | INTERNO | Itens descartados vencidos no mês. |
+| `itens_movimentados` | bigint | sim | — | — | INTERNO | Itens consumidos + descartados no mês. |
+| `taxa_desperdicio_pct` | numeric | sim | — | — | INTERNO | D1 do mês, em %. |
+| `perda_rs` | numeric | sim | — | — | INTERNO | Perda estimada do mês em R$. |
+| `perda_acumulada_rs` | numeric | sim | — | — | INTERNO | Running total da perda. |
+| `variacao_pp` | numeric | sim | — | — | INTERNO | Variação da taxa vs mês anterior (pontos percentuais). |
+| `media_movel_3m` | numeric | sim | — | — | INTERNO | Média móvel da taxa nos últimos 3 meses. |
+| `ranking_perda` | bigint | sim | — | — | INTERNO | Posição do mês pela perda (1 = maior). |
 
 #### `bi.kpi_d3_d4_d8_validade_uf`
 

@@ -1,0 +1,352 @@
+Pager usage is off.
+SELECT current_database() LIKE '%teste%' AS banco_de_teste 
+Timing is on.
+BEGIN;
+BEGIN
+Time: 0.155 ms
+SET LOCAL nexus.carga_em_lote = 'on';
+SET
+Time: 0.186 ms
+INSERT INTO address (neighborhood, street, number, cep, city, state)
+SELECT 'Bairro ' || g, 'Rua Teste ' || g, g::text, lpad(g::text, 8, '0'),
+       'Cidade ' || (g % 300), (ARRAY['SP','RJ','MG','BA','PR'])[1 + g % 5]
+FROM generate_series(1, 20000) g;
+INSERT 0 20000
+Time: 89.081 ms
+INSERT INTO profile (address_id, email, name, type)
+SELECT id, 'Casa' || id || '@Teste.local', 'Casa teste ' || id, 'HOUSEHOLD'
+FROM address WHERE street LIKE 'Rua Teste %';
+INSERT 0 20000
+Time: 1122.690 ms (00:01.123)
+INSERT INTO profile (email, name, type)
+SELECT 'empresa' || g || '@teste.local', 'Empresa teste ' || g, 'COMPANY'
+FROM generate_series(1, 2000) g;
+INSERT 0 2000
+Time: 86.173 ms
+INSERT INTO company (plan_id, cnpj, profile_id)
+SELECT (SELECT min(id) FROM plan), lpad((90000000000000 + p.id)::text, 14, '0'), p.id
+FROM profile p WHERE p.email LIKE 'empresa%@teste.local';
+INSERT 0 2000
+Time: 59.177 ms
+INSERT INTO payment (due_date, billing_period_start, billing_period_end, payment_status,
+                     company_id, plan_id, amount, paid_at)
+SELECT m.inicio + CASE WHEN m.n = 0 THEN 27 ELSE 9 END, m.inicio, (m.inicio + INTERVAL '1 month - 1 day')::date,
+       CASE WHEN m.n = 0 THEN 'PENDING'
+            WHEN (c.id + m.n) % 50 = 0 THEN 'PENDING'
+            ELSE 'PAID' END::payment_status_enum,
+       c.id, c.plan_id, 99.90,
+       CASE WHEN m.n > 0 AND (c.id + m.n) % 50 <> 0 THEN m.inicio + 5 END
+FROM company c
+JOIN profile p ON p.id = c.profile_id AND p.email LIKE 'empresa%@teste.local'
+CROSS JOIN LATERAL (
+    SELECT n, (date_trunc('month', CURRENT_DATE) - n * INTERVAL '1 month')::date AS inicio
+    FROM generate_series(0, 23) n
+) m;
+INSERT 0 48000
+Time: 2947.053 ms (00:02.947)
+INSERT INTO food (name, category_id, product_brand, package_quantity, unit_of_measure, gtin)
+SELECT (ARRAY['Arroz integral', 'Feijão carioca', 'Leite integral', 'Café torrado', 'Macarrão espaguete',
+              'Azeite de oliva', 'Açúcar refinado', 'Farinha de trigo', 'Molho de tomate', 'Iogurte natural'])
+       [1 + g % 10] || ' ' || g,
+       (SELECT min(id) FROM category), 'Marca ' || (g % 50), 1, 'unit', '3' || lpad(g::text, 12, '0')
+FROM generate_series(1, 100000) g;
+INSERT 0 100000
+Time: 1973.980 ms (00:01.974)
+CREATE TEMP TABLE casas ON COMMIT DROP AS
+    SELECT row_number() OVER (ORDER BY id) AS n, id FROM profile WHERE email LIKE 'Casa%@Teste.local';
+SELECT 20000
+Time: 10.284 ms
+CREATE TEMP TABLE alimentos ON COMMIT DROP AS
+    SELECT row_number() OVER (ORDER BY id) AS n, id FROM food WHERE gtin LIKE '3%' AND product_brand LIKE 'Marca %';
+SELECT 100000
+Time: 45.626 ms
+INSERT INTO pantry_item (food_id, profile_id, quantity, expiry_date, created_at)
+SELECT a.id, c.id, 1 + g % 5,
+       CASE WHEN g % 20 = 0 THEN NULL ELSE CURRENT_DATE - 90 + (g % 400) END,
+       now() - (g % 365) * INTERVAL '1 day'
+FROM generate_series(1, 400000) g
+JOIN casas c ON c.n = 1 + g % 20000
+JOIN alimentos a ON a.n = 1 + (g * 7) % 100000;
+INSERT 0 400000
+Time: 10201.055 ms (00:10.201)
+ANALYZE address;
+ANALYZE
+Time: 101.718 ms
+ANALYZE profile;
+ANALYZE
+Time: 76.018 ms
+ANALYZE company;
+ANALYZE
+Time: 2.509 ms
+ANALYZE payment;
+ANALYZE
+Time: 68.404 ms
+ANALYZE food;
+ANALYZE
+Time: 113.050 ms
+ANALYZE pantry_item;
+ANALYZE
+Time: 57.606 ms
+SELECT (SELECT count(*) FROM pantry_item) AS itens_despensa, (SELECT count(*) FROM profile) AS perfis,
+       (SELECT count(*) FROM payment) AS pagamentos, (SELECT count(*) FROM food) AS alimentos;
+ itens_despensa | perfis | pagamentos | alimentos 
+----------------+--------+------------+-----------
+         400670 |  22643 |      48598 |    100560
+(1 row)
+
+Time: 38.949 ms
+SELECT max(id) AS casa FROM profile WHERE email LIKE 'Casa%@Teste.local' 
+Time: 0.740 ms
+SELECT email AS email_login FROM profile WHERE id = 20643 
+Time: 0.261 ms
+SAVEPOINT sem_indices;
+SAVEPOINT
+Time: 0.180 ms
+DROP INDEX idx_pantry_expiry_id, idx_pantry_profile_expiry_id, idx_pantry_profile_food_expiry,
+           idx_payment_company_due, idx_payment_company_status_due, idx_payment_pending_due,
+           idx_food_name_lower_trgm, idx_food_name, idx_profile_email_lower;
+DROP INDEX
+Time: 0.957 ms
+ANALYZE pantry_item;
+ANALYZE
+Time: 57.108 ms
+ANALYZE payment;
+ANALYZE
+Time: 57.453 ms
+ANALYZE food;
+ANALYZE
+Time: 85.160 ms
+ANALYZE profile;
+ANALYZE
+Time: 48.591 ms
+=== Q1 SEM índice: vencimentos dos próximos 7 dias (fn_get_expiring_products)
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT profile_id, id, expiry_date FROM pantry_item
+WHERE expiry_date BETWEEN CURRENT_DATE AND CURRENT_DATE + 7
+ORDER BY expiry_date, id;
+                                                             QUERY PLAN                                                              
+-------------------------------------------------------------------------------------------------------------------------------------
+ Gather Merge  (cost=9522.89..10065.46 rows=4718 width=12) (actual time=28.782..31.598 rows=8018 loops=1)
+   Workers Planned: 1
+   Workers Launched: 1
+   Buffers: shared hit=2976
+   ->  Sort  (cost=8522.88..8534.67 rows=4718 width=12) (actual time=17.594..17.816 rows=4009 loops=2)
+         Sort Key: expiry_date, id
+         Sort Method: quicksort  Memory: 455kB
+         Buffers: shared hit=2976
+         Worker 0:  Sort Method: quicksort  Memory: 100kB
+         ->  Parallel Seq Scan on pantry_item  (cost=0.00..8234.99 rows=4718 width=12) (actual time=0.057..16.360 rows=4009 loops=2)
+               Filter: ((expiry_date >= CURRENT_DATE) AND (expiry_date <= (CURRENT_DATE + 7)))
+               Rows Removed by Filter: 196326
+               Buffers: shared hit=2932
+ Planning:
+   Buffers: shared hit=28
+ Planning Time: 0.117 ms
+ Execution Time: 31.957 ms
+(17 rows)
+
+Time: 32.618 ms
+=== Q2 SEM índice: despensa de uma casa ordenada por validade (tela principal do app)
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT * FROM pantry_item WHERE profile_id = 20643
+ORDER BY expiry_date ASC NULLS LAST, id DESC;
+                                                            QUERY PLAN                                                            
+----------------------------------------------------------------------------------------------------------------------------------
+ Gather Merge  (cost=6878.33..6879.71 rows=12 width=28) (actual time=21.144..23.997 rows=20 loops=1)
+   Workers Planned: 1
+   Workers Launched: 1
+   Buffers: shared hit=2976
+   ->  Sort  (cost=5878.32..5878.35 rows=12 width=28) (actual time=10.710..10.711 rows=10 loops=2)
+         Sort Key: expiry_date, id DESC
+         Sort Method: quicksort  Memory: 26kB
+         Buffers: shared hit=2976
+         Worker 0:  Sort Method: quicksort  Memory: 25kB
+         ->  Parallel Seq Scan on pantry_item  (cost=0.00..5878.10 rows=12 width=28) (actual time=10.673..10.674 rows=10 loops=2)
+               Filter: (profile_id = 20643)
+               Rows Removed by Filter: 200325
+               Buffers: shared hit=2932
+ Planning:
+   Buffers: shared hit=13
+ Planning Time: 0.098 ms
+ Execution Time: 24.014 ms
+(17 rows)
+
+Time: 24.535 ms
+=== Q3 SEM índice: mensalidades pendentes vencidas (sp_update_overdue_payments)
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id, company_id, due_date FROM payment
+WHERE payment_status = 'PENDING' AND due_date < CURRENT_DATE;
+                                                QUERY PLAN                                                
+----------------------------------------------------------------------------------------------------------
+ Seq Scan on payment  (cost=0.00..1403.47 rows=2871 width=12) (actual time=0.006..3.867 rows=925 loops=1)
+   Filter: ((payment_status = 'PENDING'::payment_status_enum) AND (due_date < CURRENT_DATE))
+   Rows Removed by Filter: 47673
+   Buffers: shared hit=553
+ Planning:
+   Buffers: shared hit=25
+ Planning Time: 0.091 ms
+ Execution Time: 3.917 ms
+(8 rows)
+
+Time: 4.504 ms
+=== Q4 SEM índice: busca de alimento por trecho do nome (busca do app)
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id, name FROM food WHERE lower(name) LIKE '%arroz integral 49%';
+                                              QUERY PLAN                                              
+------------------------------------------------------------------------------------------------------
+ Seq Scan on food  (cost=0.00..2733.40 rows=10 width=26) (actual time=0.394..40.406 rows=111 loops=1)
+   Filter: (lower((name)::text) ~~ '%arroz integral 49%'::text)
+   Rows Removed by Filter: 100449
+   Buffers: shared hit=1225
+ Planning:
+   Buffers: shared hit=12
+ Planning Time: 0.055 ms
+ Execution Time: 40.421 ms
+(8 rows)
+
+Time: 40.918 ms
+=== Q5 SEM índice: login por e-mail sem diferenciar maiúsculas
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id, type, status FROM profile WHERE lower(email) = lower('Casa20570@Teste.local');
+                                              QUERY PLAN                                              
+------------------------------------------------------------------------------------------------------
+ Seq Scan on profile  (cost=0.00..664.64 rows=113 width=12) (actual time=6.526..7.203 rows=1 loops=1)
+   Filter: (lower((email)::text) = 'casa20570@teste.local'::text)
+   Rows Removed by Filter: 22642
+   Buffers: shared hit=325
+ Planning:
+   Buffers: shared hit=16
+ Planning Time: 0.163 ms
+ Execution Time: 7.215 ms
+(8 rows)
+
+Time: 7.816 ms
+ROLLBACK TO SAVEPOINT sem_indices;
+ROLLBACK
+Time: 0.241 ms
+ANALYZE pantry_item;
+ANALYZE
+Time: 73.824 ms
+ANALYZE payment;
+ANALYZE
+Time: 56.424 ms
+ANALYZE food;
+ANALYZE
+Time: 115.799 ms
+ANALYZE profile;
+ANALYZE
+Time: 66.052 ms
+=== Q1 COM idx_pantry_expiry_id
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT profile_id, id, expiry_date FROM pantry_item
+WHERE expiry_date BETWEEN CURRENT_DATE AND CURRENT_DATE + 7
+ORDER BY expiry_date, id;
+                                                                QUERY PLAN                                                                 
+-------------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=3865.69..3886.56 rows=8349 width=12) (actual time=3.611..4.103 rows=8018 loops=1)
+   Sort Key: expiry_date, id
+   Sort Method: quicksort  Memory: 506kB
+   Buffers: shared hit=141
+   ->  Bitmap Heap Scan on pantry_item  (cost=202.01..3321.86 rows=8349 width=12) (actual time=0.271..1.218 rows=8018 loops=1)
+         Recheck Cond: ((expiry_date >= CURRENT_DATE) AND (expiry_date <= (CURRENT_DATE + 7)))
+         Heap Blocks: exact=114
+         Buffers: shared hit=141
+         ->  Bitmap Index Scan on idx_pantry_expiry_id  (cost=0.00..199.92 rows=8349 width=0) (actual time=0.254..0.255 rows=8018 loops=1)
+               Index Cond: ((expiry_date >= CURRENT_DATE) AND (expiry_date <= (CURRENT_DATE + 7)))
+               Buffers: shared hit=27
+ Planning:
+   Buffers: shared hit=26
+ Planning Time: 0.179 ms
+ Execution Time: 4.457 ms
+(15 rows)
+
+Time: 5.089 ms
+=== Q2 COM idx_pantry_profile_expiry_id
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT * FROM pantry_item WHERE profile_id = 20643
+ORDER BY expiry_date ASC NULLS LAST, id DESC;
+                                                                  QUERY PLAN                                                                  
+----------------------------------------------------------------------------------------------------------------------------------------------
+ Index Scan using idx_pantry_profile_expiry_id on pantry_item  (cost=0.42..42.02 rows=20 width=28) (actual time=0.008..0.011 rows=20 loops=1)
+   Index Cond: (profile_id = 20643)
+   Buffers: shared hit=4
+ Planning:
+   Buffers: shared hit=15
+ Planning Time: 0.081 ms
+ Execution Time: 0.021 ms
+(7 rows)
+
+Time: 0.294 ms
+=== Q3 COM idx_payment_pending_due
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id, company_id, due_date FROM payment
+WHERE payment_status = 'PENDING' AND due_date < CURRENT_DATE;
+                                                              QUERY PLAN                                                              
+--------------------------------------------------------------------------------------------------------------------------------------
+ Bitmap Heap Scan on payment  (cost=46.23..648.79 rows=2832 width=12) (actual time=0.077..0.470 rows=925 loops=1)
+   Recheck Cond: ((due_date < CURRENT_DATE) AND (payment_status = 'PENDING'::payment_status_enum))
+   Heap Blocks: exact=270
+   Buffers: shared hit=272
+   ->  Bitmap Index Scan on idx_payment_pending_due  (cost=0.00..45.52 rows=2832 width=0) (actual time=0.044..0.044 rows=925 loops=1)
+         Index Cond: (due_date < CURRENT_DATE)
+         Buffers: shared hit=2
+ Planning:
+   Buffers: shared hit=31
+ Planning Time: 0.117 ms
+ Execution Time: 0.523 ms
+(11 rows)
+
+Time: 0.804 ms
+=== Q4 COM idx_food_name_lower_trgm
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id, name FROM food WHERE lower(name) LIKE '%arroz integral 49%';
+                                                              QUERY PLAN                                                               
+---------------------------------------------------------------------------------------------------------------------------------------
+ Bitmap Heap Scan on food  (cost=1826.37..1863.80 rows=10 width=26) (actual time=5.778..5.844 rows=111 loops=1)
+   Recheck Cond: (lower((name)::text) ~~ '%arroz integral 49%'::text)
+   Heap Blocks: exact=16
+   Buffers: shared hit=152 read=328
+   ->  Bitmap Index Scan on idx_food_name_lower_trgm  (cost=0.00..1826.36 rows=10 width=0) (actual time=5.767..5.767 rows=111 loops=1)
+         Index Cond: (lower((name)::text) ~~ '%arroz integral 49%'::text)
+         Buffers: shared hit=136 read=328
+ Planning:
+   Buffers: shared hit=25
+ Planning Time: 0.100 ms
+ Execution Time: 5.866 ms
+(11 rows)
+
+Time: 6.209 ms
+=== Q5 COM idx_profile_email_lower
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id, type, status FROM profile WHERE lower(email) = lower('Casa20570@Teste.local');
+                                                            QUERY PLAN                                                            
+----------------------------------------------------------------------------------------------------------------------------------
+ Index Scan using idx_profile_email_lower on profile  (cost=0.29..8.30 rows=1 width=12) (actual time=0.009..0.009 rows=1 loops=1)
+   Index Cond: (lower((email)::text) = 'casa20570@teste.local'::text)
+   Buffers: shared hit=3
+ Planning:
+   Buffers: shared hit=23
+ Planning Time: 0.121 ms
+ Execution Time: 0.018 ms
+(7 rows)
+
+Time: 0.367 ms
+ROLLBACK;
+ROLLBACK
+Time: 1.488 ms
+SELECT count(*) AS itens_despensa_apos_rollback FROM pantry_item;
+ itens_despensa_apos_rollback 
+------------------------------
+                          670
+(1 row)
+
+Time: 24.052 ms
+SELECT count(*) AS indices_v8_presentes FROM pg_indexes
+WHERE indexname IN ('idx_pantry_expiry_id', 'idx_pantry_profile_expiry_id', 'idx_payment_pending_due',
+                    'idx_food_name_lower_trgm', 'idx_profile_email_lower');
+ indices_v8_presentes 
+----------------------
+                    5
+(1 row)
+
+Time: 1.818 ms

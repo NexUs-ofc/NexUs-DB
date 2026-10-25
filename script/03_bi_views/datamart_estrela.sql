@@ -3,6 +3,7 @@
 -- Dimensões: dim_tempo, dim_alimento, dim_localidade, dim_perfil, dim_empresa
 -- Fatos:     fato_estoque, fato_movimento, fato_estoque_minimo, fato_pagamento, fato_cadastro
 -- KPIs:      vw_kpi_cards (D1..D9 com meta e desvio) + uma view de detalhe por KPI
+--            kpi_d1_evolucao_mensal: running total, LAG, média móvel e RANK (window functions)
 -- Volume:    vw_volume_tabelas (meta de >= 500 registros por tabela)
 -- Estrela: fatos apontam direto para as dimensões; dimensões não se ligam entre si.
 -- Chave -1 = "não informado". Nenhuma view expõe nome, e-mail, telefone ou rua.
@@ -141,6 +142,27 @@ FROM bi.fato_movimento m
 JOIN bi.dim_tempo t ON t.sk_data = m.sk_data_evento
 JOIN bi.dim_localidade l ON l.sk_localidade = m.sk_localidade
 GROUP BY GROUPING SETS ((t.ano_mes, l.regiao), (t.ano_mes), (l.regiao), ());
+
+-- D1 acumulado — evolução mensal: running total da perda, variação mês a mês e ranking dos piores meses
+CREATE VIEW bi.kpi_d1_evolucao_mensal AS
+WITH mensal AS (                                -- 1) agrega os movimentos por mês
+    SELECT t.ano_mes,
+           SUM(m.expirado) AS itens_expirados,
+           COUNT(*) AS itens_movimentados,
+           SUM(m.perda_estimada) AS perda_rs
+    FROM bi.fato_movimento m
+    JOIN bi.dim_tempo t ON t.sk_data = m.sk_data_evento
+    GROUP BY t.ano_mes
+), indicadores AS (                             -- 2) taxa do mês
+    SELECT *, ROUND(100.0 * itens_expirados / NULLIF(itens_movimentados, 0), 2) AS taxa_desperdicio_pct
+    FROM mensal
+)
+SELECT ano_mes, itens_expirados, itens_movimentados, taxa_desperdicio_pct, perda_rs,
+       SUM(perda_rs) OVER (ORDER BY ano_mes ROWS UNBOUNDED PRECEDING) AS perda_acumulada_rs,      -- running total
+       taxa_desperdicio_pct - LAG(taxa_desperdicio_pct) OVER (ORDER BY ano_mes) AS variacao_pp,    -- vs mês anterior
+       ROUND(AVG(taxa_desperdicio_pct) OVER (ORDER BY ano_mes ROWS 2 PRECEDING), 2) AS media_movel_3m,
+       RANK() OVER (ORDER BY perda_rs DESC) AS ranking_perda
+FROM indicadores;
 
 -- D3, D4, D8 — situação da validade dos itens hoje na despensa, por UF
 CREATE VIEW bi.kpi_d3_d4_d8_validade_uf AS
