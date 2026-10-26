@@ -40,8 +40,11 @@ não é necessário configurá-lo no `PATH`:
 
 ### Banco novo (ambiente local/CI)
 
-Sem schema prévio, basta rodar `migrate` diretamente — o Flyway cria a tabela de
-histórico (`flyway_schema_history`) e aplica todas as migrations em sequência.
+O Flyway cria seu histórico (`flyway_schema_history`) automaticamente. Para testar
+um banco vazio, aplique até a V10, prepare a tabela de histórico de estoque com
+`tests/fixtures/registro_estoque_pre_v11.sql` e depois execute `migrate` para aplicar
+as migrations restantes. A V11 altera essa tabela, que já existe no ambiente do
+aplicativo, mas era criada fora das migrations anteriores. O CI reproduz essa sequência.
 
 ## Próximas migrations
 
@@ -51,6 +54,8 @@ nunca alterando os arquivos já aplicados.
 ## V11 — movimentos de estoque
 
 Permite saldo zero em pantry_item e registra CONSUMED ou DISCARDED com uma única quantity positiva em bi_hist.registro_estoque, ligada somente ao lote. O Core atualiza saldo e histórico na mesma transação e preserva lotes zerados fora das listagens.
+
+A V11 exige que bi_hist.registro_estoque já exista. Ela altera a tabela existente; não cria nem recria o schema ou a tabela. O CI prepara esse estado anterior com tests/fixtures/registro_estoque_pre_v11.sql depois da V10 para testar a atualização em um banco descartável.
 
 Em bases com histórico antigo, a migration cria lotes encerrados para preservar os registros existentes, unifica as quantidades e converte os tipos. Quantidades inconsistentes com o tipo abortam a conversão. A perda monetária antiga é preservada; novas operações podem não ter estimated_loss.
 

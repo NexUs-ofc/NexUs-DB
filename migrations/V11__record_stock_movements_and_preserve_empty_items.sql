@@ -4,17 +4,6 @@ ALTER TABLE public.pantry_item
 ALTER TABLE public.pantry_item
     ADD CONSTRAINT pantry_item_quantity_check CHECK (quantity >= 0);
 
-CREATE SCHEMA IF NOT EXISTS bi_hist;
-
-CREATE TABLE IF NOT EXISTS bi_hist.registro_estoque (
-    id SERIAL PRIMARY KEY,
-    pantry_item_id INTEGER NOT NULL REFERENCES public.pantry_item(id) ON DELETE RESTRICT,
-    event_type VARCHAR(30) NOT NULL CHECK (event_type IN ('CONSUMED', 'DISCARDED')),
-    quantity INTEGER NOT NULL CHECK (quantity > 0),
-    event_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    estimated_loss DECIMAL(10,2)
-);
-
 DO $$
 DECLARE
     movement RECORD;
