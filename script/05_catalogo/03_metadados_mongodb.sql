@@ -15,7 +15,7 @@ INSERT INTO catalogo.objeto (banco, schema_nome, objeto_nome, tipo_objeto, descr
     ('MONGODB', NULL, 'recipes', 'COLLECTION', 'Receitas geradas pela IA ou cadastradas pelo usuário.'),
     ('MONGODB', NULL, 'events', 'COLLECTION', 'Eventos planejados pelo household (churrasco, aniversário) com as receitas e o cálculo de ingredientes.'),
     ('MONGODB', NULL, 'shopping_lists', 'COLLECTION', 'Listas de compras, avulsas ou geradas a partir de um evento.'),
-    ('MONGODB', NULL, 'records', 'COLLECTION', 'Movimentos de estoque do household. item_consumed e item_expired são os mesmos eventos que o BI lê de bi_hist.registro_estoque (KPIs D1 e D9).'),
+    ('MONGODB', NULL, 'records', 'COLLECTION', 'Logs de atividade e exemplos simulados. Não alimenta automaticamente o BI. Movimentos reais de consumo/descarte são gravados separadamente no PostgreSQL em bi_hist.registro_estoque.'),
     ('MONGODB', NULL, 'notifications', 'COLLECTION', 'Alertas do NexUs-Notify. Formato igual ao domínio Notification do serviço.'),
     ('MONGODB', NULL, 'conversations', 'COLLECTION', 'Histórico das conversas com o assistente.'),
     ('MONGODB', NULL, 'metrics', 'COLLECTION', 'Telemetria da IA: 1 requisição ao assistente.'),

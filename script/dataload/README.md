@@ -171,8 +171,9 @@ Depois rode `script/03_bi_views/datamart_estrela.sql` no pgAdmin para recriar as
   (perfis com e-mail `@bi.nexus.local`, em cascata). Também remove o catálogo de execuções
   anteriores do BI que não estiver em uso.
 - IDs vêm das sequences do banco, então não conflitam com o que o app grava.
-- O histórico de consumo/descarte (`item_consumed` / `item_expired`) fica em
-  `bi_hist.registro_estoque` (criada pelo próprio dataload). Ele alimenta D1 e D9.
+- O histórico de consumo/descarte (`CONSUMED` / `DISCARDED`) fica em
+  `bi_hist.registro_estoque`, criada pela V11. O Core grava movimentos reais; esta carga grava simulações.
+- Cada movimento simulado aponta para um lote preservado em `pantry_item` com saldo zero.
 
 | Tabela | Registros | Como é gerado |
 |---|---|---|
@@ -181,7 +182,7 @@ Depois rode `script/03_bi_views/datamart_estrela.sql` no pgAdmin para recriar as
 | `profile_phone` | ~560 | celular com DDD da UF + fixo para parte dos perfis |
 | `auth_method` | ~545 | Google/senha; alguns vinculam os dois |
 | `payment` | ~565 | mensalidades desde o cadastro; bons e maus pagadores |
-| `pantry_item` | 520 | o que está hoje na despensa (inclui vencidos esquecidos e itens sem validade) |
+| `pantry_item` | ~1040 | ~520 lotes disponíveis e ~520 lotes encerrados vinculados ao histórico |
 | `pantry_product_setting` | 520 | mínimos configurados para o que a casa tem; parte fica abaixo |
 | `bi_hist.registro_estoque` | 520 | itens consumidos ou descartados nos últimos 12 meses |
 | `company` / `store` | 55 / 85 | cada uma também é um profile, então dividem os 520 com os households |

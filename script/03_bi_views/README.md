@@ -3,6 +3,8 @@
 `datamart_estrela.sql` cria o schema `bi` com views para ferramentas de BI.
 Rodar no pgAdmin (Query Tool) no banco do app, **depois** do dataload BI; só mexe nos schemas `bi` e `bi_hist`.
 
+A V11 adapta as views existentes ao histórico ligado a pantry_item e exclui saldo zero do fato de estoque. O Core grava movimentos reais e o dataload grava simulações no mesmo contrato. As fórmulas dos KPIs permanecem contando operações, não unidades; sua revisão fica para outra etapa.
+
 | Tipo | Views |
 |---|---|
 | Dimensões | `dim_tempo`, `dim_alimento` (com categoria), `dim_localidade` (cidade, UF, região), `dim_perfil`, `dim_empresa` (com plano) |

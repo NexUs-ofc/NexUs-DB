@@ -1,6 +1,6 @@
 -- =============================================================================
 -- NexUs — Catálogo de metadados (2/3): tabelas e views do PostgreSQL
--- Migrations V1-V10 (inclui schema auditoria), monitoramento (DAU) e schemas bi e bi_hist (data mart).
+-- Migrations V1-V11, monitoramento (DAU) e schemas bi e bi_hist.
 -- Pode rodar de novo quando quiser: apaga e recarrega só os metadados do PostgreSQL.
 -- Requer 01_estrutura.sql já executado.
 -- =============================================================================
@@ -17,7 +17,7 @@ INSERT INTO catalogo.objeto (banco, schema_nome, objeto_nome, tipo_objeto, descr
     ('POSTGRESQL', 'public', 'category', 'TABELA', 'Domínio: categorias de alimentos (17 fixas, iguais às do supermercado).'),
     ('POSTGRESQL', 'public', 'company', 'TABELA', 'Empresa cliente (B2B). Cada empresa é também um perfil COMPANY.'),
     ('POSTGRESQL', 'public', 'food', 'TABELA', 'Catálogo de alimentos (SKU): produto + marca + embalagem, identificado pelo GTIN.'),
-    ('POSTGRESQL', 'public', 'pantry_item', 'TABELA', 'Itens na despensa, geladeira ou freezer do household hoje. Um registro por lote comprado.'),
+    ('POSTGRESQL', 'public', 'pantry_item', 'TABELA', 'Lotes de estoque do household, inclusive encerrados com saldo zero. A API lista apenas saldos positivos.'),
     ('POSTGRESQL', 'public', 'pantry_product_setting', 'TABELA', 'Estoque mínimo que o household quer manter de cada alimento (gera alerta de reposição).'),
     ('POSTGRESQL', 'public', 'payment', 'TABELA', 'Cobranças mensais do plano de cada empresa.'),
     ('POSTGRESQL', 'public', 'plan', 'TABELA', 'Domínio: planos de assinatura das empresas (Ceris, Enterprise, Exclusive).'),
@@ -42,7 +42,7 @@ INSERT INTO catalogo.objeto (banco, schema_nome, objeto_nome, tipo_objeto, descr
     ('POSTGRESQL', 'bi', 'kpi_d9_desperdicio_categoria', 'VIEW', 'D9: itens expirados da categoria / households que têm a categoria.'),
     ('POSTGRESQL', 'bi', 'vw_kpi_cards', 'VIEW', 'Cards do dashboard: valor, meta, desvio e situação de D1-D9, financeiro (F1, F2) e base ativa (U1).'),
     ('POSTGRESQL', 'bi', 'vw_volume_tabelas', 'VIEW', 'Teste de volume: registros por tabela e se atinge 500.'),
-    ('POSTGRESQL', 'bi_hist', 'registro_estoque', 'TABELA', 'Histórico de saída da despensa: 1 linha por item consumido ou descartado vencido.'),
+    ('POSTGRESQL', 'bi_hist', 'registro_estoque', 'TABELA', 'Saídas reais do Core e dados simulados identificados pelo perfil. Uma linha por consumo ou descarte, ligada ao lote preservado em pantry_item.'),
     ('POSTGRESQL', 'bi', 'kpi_d1_evolucao_mensal', 'VIEW', 'D1 por mês com running total da perda, variação mês a mês, média móvel de 3 meses e ranking (window functions).'),
     ('POSTGRESQL', 'auditoria', 'log_alteracao', 'TABELA', 'Tabela pai dos logs de auditoria (herança). Consultá-la retorna os logs de todas as filhas (V10).'),
     ('POSTGRESQL', 'auditoria', 'log_profile', 'TABELA', 'Log de INSERT/UPDATE/DELETE em profile; herda as colunas de log_alteracao (V10).'),
@@ -146,7 +146,7 @@ CROSS JOIN (VALUES
     ('id', 1, 'integer', FALSE, 'nextval(''pantry_item_id_seq''::regclass)', 'PK', NULL, 'INTERNO', 'Identificador do item (serial).'),
     ('food_id', 2, 'integer', FALSE, NULL, 'FK', 'food.id', 'INTERNO', 'Alimento (FK food.id).'),
     ('profile_id', 3, 'integer', FALSE, NULL, 'FK', 'profile.id', 'INTERNO', 'Household dono do item (FK profile.id, cascata).'),
-    ('quantity', 4, 'integer', FALSE, NULL, NULL, NULL, 'INTERNO', 'Quantidade de embalagens. Maior que zero.'),
+    ('quantity', 4, 'integer', FALSE, NULL, NULL, NULL, 'INTERNO', 'Saldo não negativo de embalagens. Zero preserva o lote e seu histórico; a API omite saldo zero do estoque disponível.'),
     ('expiry_date', 5, 'date', TRUE, NULL, NULL, NULL, 'INTERNO', 'Data de validade; nulo quando o produto não tem validade impressa (granel, feira).'),
     ('created_at', 6, 'timestamp without time zone', FALSE, 'CURRENT_TIMESTAMP', NULL, NULL, 'INTERNO', 'Quando o item entrou na despensa (compra).')
 ) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
@@ -373,8 +373,8 @@ CROSS JOIN (VALUES
     ('sk_data_evento', 5, 'integer', TRUE, NULL, NULL, NULL, 'INTERNO', 'FK dim_tempo: consumo ou descarte.'),
     ('sk_data_compra', 6, 'integer', TRUE, NULL, NULL, NULL, 'INTERNO', 'FK dim_tempo: compra.'),
     ('sk_data_validade', 7, 'integer', TRUE, NULL, NULL, NULL, 'INTERNO', 'FK dim_tempo: validade (-1 sem validade).'),
-    ('tipo_evento', 8, 'character varying(30)', TRUE, NULL, NULL, NULL, 'INTERNO', 'item_consumed ou item_expired.'),
-    ('expirado', 9, 'integer', TRUE, NULL, NULL, NULL, 'INTERNO', '1 se foi descartado vencido.'),
+    ('tipo_evento', 8, 'character varying(30)', TRUE, NULL, NULL, NULL, 'INTERNO', 'CONSUMED ou DISCARDED.'),
+    ('expirado', 9, 'integer', TRUE, NULL, NULL, NULL, 'INTERNO', 'Nome histórico da flag de descarte: 1 para DISCARDED, mesmo sem vencimento.'),
     ('consumido', 10, 'integer', TRUE, NULL, NULL, NULL, 'INTERNO', '1 se foi consumido.'),
     ('qtd_consumida', 11, 'integer', TRUE, NULL, NULL, NULL, 'INTERNO', 'Embalagens consumidas.'),
     ('qtd_descartada', 12, 'integer', TRUE, NULL, NULL, NULL, 'INTERNO', 'Embalagens descartadas.'),
@@ -517,15 +517,11 @@ SELECT o.id, v.coluna_nome, v.posicao, v.tipo_dado, v.aceita_nulo, v.valor_padra
 FROM catalogo.objeto o
 CROSS JOIN (VALUES
     ('id', 1, 'integer', FALSE, 'nextval(''bi_hist.registro_estoque_id_seq''::regclass)', 'PK', NULL, 'INTERNO', 'Identificador do registro (serial).'),
-    ('profile_id', 2, 'integer', FALSE, NULL, 'FK', 'profile.id', 'INTERNO', 'Household (FK profile.id, cascata).'),
-    ('food_id', 3, 'integer', FALSE, NULL, 'FK', 'food.id', 'INTERNO', 'Alimento (FK food.id).'),
-    ('event_type', 4, 'character varying(30)', FALSE, NULL, NULL, NULL, 'INTERNO', 'item_consumed ou item_expired (mesmos valores de records no MongoDB).'),
-    ('event_date', 5, 'timestamp without time zone', FALSE, NULL, NULL, NULL, 'INTERNO', 'Quando o item foi consumido ou descartado.'),
-    ('purchase_date', 6, 'timestamp without time zone', FALSE, NULL, NULL, NULL, 'INTERNO', 'Quando o item entrou na despensa.'),
-    ('expiry_date', 7, 'date', TRUE, NULL, NULL, NULL, 'INTERNO', 'Validade do item; nulo se não tinha validade.'),
-    ('consumed_quantity', 8, 'integer', FALSE, '0', NULL, NULL, 'INTERNO', 'Embalagens consumidas (item_consumed).'),
-    ('discarded_quantity', 9, 'integer', FALSE, '0', NULL, NULL, 'INTERNO', 'Embalagens descartadas (item_expired).'),
-    ('estimated_loss', 10, 'numeric(10,2)', FALSE, '0', NULL, NULL, 'INTERNO', 'Perda estimada em R$ com o descarte.')
+    ('pantry_item_id', 2, 'integer', FALSE, NULL, 'FK', 'pantry_item.id', 'INTERNO', 'Lote preservado com saldo zero. Perfil, alimento, entrada e validade são obtidos pelo lote. Exclusão física bloqueada enquanto houver movimentos.'),
+    ('event_type', 3, 'character varying(30)', FALSE, NULL, NULL, NULL, 'INTERNO', 'CONSUMED: consumo; DISCARDED: descarte, mesmo sem vencimento. Correções e remoções manuais não geram movimentos.'),
+    ('quantity', 4, 'integer', FALSE, NULL, NULL, NULL, 'INTERNO', 'Embalagens movimentadas nesta operação, maior que zero e limitada pelo saldo disponível validado pelo Core.'),
+    ('event_date', 5, 'timestamp without time zone', FALSE, 'CURRENT_TIMESTAMP', NULL, NULL, 'INTERNO', 'Data e hora do movimento, atribuídas pelo servidor.'),
+    ('estimated_loss', 6, 'numeric(10,2)', TRUE, NULL, NULL, NULL, 'INTERNO', 'Perda em R$ quando conhecida. Valores legados preservados; o Core não estima valores sem preço de compra.')
 ) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
 WHERE o.banco = 'POSTGRESQL' AND o.schema_nome = 'bi_hist' AND o.objeto_nome = 'registro_estoque';
 

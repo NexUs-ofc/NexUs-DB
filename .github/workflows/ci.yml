@@ -50,6 +50,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Run migrations through V10
+        run: |
+          docker run --rm --network host \
+            -v "$PWD/migrations:/flyway/sql" \
+            flyway/flyway:10 \
+            -url=jdbc:postgresql://localhost:5432/nexus_test \
+            -user=testuser \
+            -password=testpass \
+            -locations=filesystem:/flyway/sql \
+            -target=10 \
+            migrate
+
+      - name: Prepare pre-existing stock history
+        env:
+          PGPASSWORD: testpass
+        run: psql -v ON_ERROR_STOP=1 -h localhost -U testuser -d nexus_test -f tests/fixtures/registro_estoque_pre_v11.sql
+
       - name: Run Flyway migrations
         run: |
           docker run --rm --network host \
@@ -112,6 +129,23 @@ jobs:
           echo "PG_PASSWORD=testpass" >> .env
           echo "MONGO_URI=mongodb://localhost:27017" >> .env
           echo "MONGO_DB=nexus_test" >> .env
+
+      - name: Run migrations through V10
+        run: |
+          docker run --rm --network host \
+            -v "$PWD/migrations:/flyway/sql" \
+            flyway/flyway:10 \
+            -url=jdbc:postgresql://localhost:5432/nexus_test \
+            -user=testuser \
+            -password=testpass \
+            -locations=filesystem:/flyway/sql \
+            -target=10 \
+            migrate
+
+      - name: Prepare pre-existing stock history
+        env:
+          PGPASSWORD: testpass
+        run: psql -v ON_ERROR_STOP=1 -h localhost -U testuser -d nexus_test -f tests/fixtures/registro_estoque_pre_v11.sql
 
       - name: Run Flyway migrations
         run: |
