@@ -1,8 +1,8 @@
 -- =============================================================================
 -- NexUs — Data Mart (Star Schema) para ferramentas de BI
 -- Dimensões: dim_tempo, dim_alimento, dim_localidade, dim_perfil, dim_empresa
--- Fatos:     fato_estoque, fato_movimento, fato_estoque_minimo, fato_pagamento, fato_cadastro
--- KPIs:      vw_kpi_cards (D1..D9 com meta e desvio) + uma view de detalhe por KPI
+-- Fatos:     fato_estoque, fato_movimento, fato_pagamento, fato_cadastro
+-- KPIs:      vw_kpi_cards (D1, D3–D5 e D7–D9 com meta e desvio) + uma view de detalhe por KPI
 --            kpi_d1_evolucao_mensal: running total, LAG, média móvel e RANK (window functions)
 -- Volume:    vw_volume_tabelas (meta de >= 500 registros por tabela)
 -- Estrela: fatos apontam direto para as dimensões; dimensões não se ligam entre si.
@@ -106,16 +106,6 @@ FROM bi_hist.registro_estoque r
 JOIN pantry_item i ON i.id = r.pantry_item_id
 JOIN profile p ON p.id = i.profile_id;
 
-CREATE VIEW bi.fato_estoque_minimo AS     -- grão: household × alimento monitorado
-SELECT s.profile_id AS sk_perfil, s.food_id AS sk_alimento, COALESCE(p.address_id, -1) AS sk_localidade,
-       COALESCE(e.qtd, 0) AS estoque, s.minimum_quantity AS minimo,
-       (COALESCE(e.qtd, 0) < s.minimum_quantity)::int AS abaixo_minimo
-FROM pantry_product_setting s
-JOIN profile p ON p.id = s.profile_id
-LEFT JOIN (SELECT profile_id, food_id, SUM(quantity) AS qtd FROM pantry_item GROUP BY 1, 2) e
-       ON e.profile_id = s.profile_id AND e.food_id = s.food_id
-WHERE s.minimum_quantity > 0;
-
 CREATE VIEW bi.fato_pagamento AS          -- grão: 1 cobrança mensal
 SELECT pg.id AS id_pagamento, pg.company_id AS sk_empresa, COALESCE(p.address_id, -1) AS sk_localidade,
        TO_CHAR(pg.billing_period_start, 'YYYYMMDD')::int AS sk_data_competencia,
@@ -185,18 +175,6 @@ SELECT l.uf, l.regiao,
 FROM bi.fato_estoque e JOIN bi.dim_localidade l ON l.sk_localidade = e.sk_localidade
 GROUP BY l.uf, l.regiao;
 
--- D6 — Estoque abaixo do mínimo: households abaixo / households com mínimo configurado
-CREATE VIEW bi.kpi_d6_estoque_minimo_uf AS
-WITH casa AS (
-    SELECT sk_perfil, MIN(sk_localidade) AS sk_localidade, MAX(abaixo_minimo) AS abaixo
-    FROM bi.fato_estoque_minimo GROUP BY sk_perfil
-)
-SELECT l.uf, l.regiao,
-       COUNT(*) AS households_com_minimo, SUM(c.abaixo) AS households_abaixo,
-       ROUND(100.0 * SUM(c.abaixo) / COUNT(*), 2) AS d6_abaixo_minimo_pct
-FROM casa c JOIN bi.dim_localidade l ON l.sk_localidade = c.sk_localidade
-GROUP BY ROLLUP ((l.uf, l.regiao));
-
 -- D7 — Vida útil no cadastro (dias) = expiry_date − created_at, por categoria
 CREATE VIEW bi.kpi_d7_vida_util_categoria AS
 SELECT a.categoria, COUNT(*) AS itens_com_validade,
@@ -235,9 +213,6 @@ WITH k (ordem, codigo, kpi, valor, unidade, meta, menor_melhor) AS (
     SELECT 5, 'D5', 'Itens em risco na UF nº 1 do ranking', MAX(itens_em_risco), 'itens', NULL, TRUE
       FROM bi.kpi_d5_ranking_vencimento_uf
     UNION ALL
-    SELECT 6, 'D6', 'Estoque abaixo do mínimo', d6_abaixo_minimo_pct, '%', 30, TRUE
-      FROM bi.kpi_d6_estoque_minimo_uf WHERE uf IS NULL
-    UNION ALL
     SELECT 7, 'D7', 'Vida útil no cadastro (média)', AVG(vida_util_dias), 'dias', NULL, FALSE
       FROM bi.fato_estoque WHERE tem_validade = 1
     UNION ALL
@@ -264,7 +239,7 @@ FROM k ORDER BY ordem;
 -- ------------------------------------------------------------- TESTE DE VOLUME
 -- category e plan são tabelas de domínio (17 categorias e 3 planos fixos do produto).
 -- company e store: cada empresa/loja também é um profile; com ~500 profiles no total elas
--- ficam com uma fração deles (households são a maioria, pois alimentam os KPIs D1..D9).
+-- ficam com uma fração deles (households são a maioria, pois alimentam os KPIs D1, D3–D5 e D7–D9).
 CREATE VIEW bi.vw_volume_tabelas AS
 SELECT tabela, registros,
        CASE WHEN tabela IN ('category', 'plan') THEN 'DOMINIO_FIXO'
@@ -278,7 +253,6 @@ FROM (VALUES
     ('company', (SELECT COUNT(*) FROM company)),
     ('food', (SELECT COUNT(*) FROM food)),
     ('pantry_item', (SELECT COUNT(*) FROM pantry_item)),
-    ('pantry_product_setting', (SELECT COUNT(*) FROM pantry_product_setting)),
     ('payment', (SELECT COUNT(*) FROM payment)),
     ('plan', (SELECT COUNT(*) FROM plan)),
     ('profile', (SELECT COUNT(*) FROM profile)),

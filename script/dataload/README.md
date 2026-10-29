@@ -21,7 +21,7 @@ dataload/
 │   │   ├── address.py       # address
 │   │   ├── account.py       # profile, profile_phone, auth_method
 │   │   ├── billing.py       # plan, company, store, payment
-│   │   ├── pantry.py        # pantry_item, pantry_product_setting
+│   │   ├── pantry.py        # pantry_item
 │   │   └── home.py          # collections do Mongo
 │   ├── seeders/             # insere no banco
 │   │   ├── postgres_seeder.py
@@ -109,7 +109,7 @@ Ordem de inserção (seguindo as chaves estrangeiras):
 3. `profile`
 4. `profile_phone`, `auth_method`
 5. `company`, `store`, `payment`
-6. `pantry_item`, `pantry_product_setting`
+6. `pantry_item`
 
 A carga do PostgreSQL ocorre em uma única transação. Se qualquer inserção falhar, todas as alterações da execução são revertidas.
 
@@ -159,7 +159,7 @@ O Notify calcula o estado de leitura a partir de `read_at`, sem persistir `is_re
 
 Acrescenta ~12 meses de uso simulado **no mesmo banco do app**, **somente no PostgreSQL**
 (não grava nada no MongoDB), com ~500 registros verossímeis por tabela e variação
-suficiente para os KPIs de desperdício D1–D9 do star schema.
+suficiente para os KPIs de desperdício D1, D3–D5 e D7–D9 do star schema.
 
 ```
 python -m script.dataload.src.main all --perfil bi
@@ -183,12 +183,11 @@ Depois rode `script/03_bi_views/datamart_estrela.sql` no pgAdmin para recriar as
 | `auth_method` | ~545 | Google/senha; alguns vinculam os dois |
 | `payment` | ~565 | mensalidades desde o cadastro; bons e maus pagadores |
 | `pantry_item` | ~1040 | ~520 lotes disponíveis e ~520 lotes encerrados vinculados ao histórico |
-| `pantry_product_setting` | 520 | mínimos configurados para o que a casa tem; parte fica abaixo |
 | `bi_hist.registro_estoque` | 520 | itens consumidos ou descartados nos últimos 12 meses |
 | `company` / `store` | 55 / 85 | cada uma também é um profile, então dividem os 520 com os households |
 | `category` / `plan` | 17 / 3 | tabelas de domínio fixas |
 
-A simulação gera mais eventos e reduz `pantry_item`, `pantry_product_setting` e o histórico
+A simulação gera mais eventos e reduz `pantry_item` e o histórico
 por amostra aleatória até `ALVO` (520), o que preserva as proporções dos KPIs.
 Para mudar o volume, altere `ALVO` e `VOL` em `src/bi.py`.
 
@@ -216,7 +215,6 @@ Variação simulada:
 | company / store | 10 |
 | payment | 30 |
 | pantry_item | 150 |
-| pantry_product_setting | 120 |
 | recipe / event | 30 / 40 |
 | knowledge | 30 |
 | record | 60 |

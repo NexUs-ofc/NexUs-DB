@@ -32,7 +32,6 @@ class PostgresConnection:
     def reset_seed_data(self):
         query = """
             TRUNCATE TABLE
-                pantry_product_setting,
                 pantry_item,
                 payment,
                 store,

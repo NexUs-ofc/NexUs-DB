@@ -3,15 +3,15 @@
 Somente PostgreSQL (não grava nada no MongoDB).
 
 Objetivo: carga de volume verossímil, ~500 registros por tabela (ALVO), com variação
-suficiente para os KPIs de desperdício D1..D9 do star schema.
+suficiente para os KPIs de desperdício D1, D3–D5 e D7–D9 do star schema.
 
 - Catálogo com ~550 SKUs de supermercado (produto x marca x embalagem, EAN-13 válido).
 - 520 perfis (households, empresas e lojas) espalhados por 60 cidades das 27 UFs.
 - Cada item comprado é consumido, vence e é descartado, ou continua na despensa hoje.
   O histórico de consumo/descarte vai para bi_hist.registro_estoque, com os mesmos
   event_type do app (CONSUMED / DISCARDED), ligado a lotes preservados com saldo zero.
-- A simulação gera mais eventos do que o ALVO; pantry_item, pantry_product_setting e o
-  histórico são reduzidos por amostra aleatória, o que preserva as proporções dos KPIs.
+- A simulação gera mais eventos do que o ALVO; pantry_item e o histórico
+  são reduzidos por amostra aleatória, o que preserva as proporções dos KPIs.
 
 Não apaga dados do app. Cada execução remove só os próprios dados da execução anterior
 (perfis com e-mail @bi.nexus.local, em cascata) e insere de novo. IDs vêm das sequences
@@ -248,7 +248,7 @@ class SimulacaoBI:
         for fid, sku in foods.items():
             self.por_categoria.setdefault(sku["categoria"], []).append(fid)
         self.pg = {t: [] for t in ["address", "profile", "profile_phone", "auth_method", "company",
-                                   "store", "payment", "pantry_item", "pantry_product_setting"]}
+                                   "store", "payment", "pantry_item"]}
         self.hist = []            # bi_hist.registro_estoque
 
     # ---------------------------------------------------------------- utilidades
@@ -324,8 +324,6 @@ class SimulacaoBI:
         for h in casas:
             self._compras(h)
         self._reduzir("pantry_item")
-        self._minimos(casas)  # depois da amostra: mínimo coerente com o estoque que ficou
-        self._reduzir("pantry_product_setting")
         self._reduzir_hist()
         self._vincular_historico()
         return self
@@ -465,32 +463,6 @@ class SimulacaoBI:
                           "consumed_quantity": consumido, "discarded_quantity": descartado,
                           "estimated_loss": perda})
 
-    def _minimos(self, casas: list):
-        estoque = {}
-        for i in self.pg["pantry_item"]:
-            estoque[(i["profile_id"], i["food_id"])] = estoque.get((i["profile_id"], i["food_id"]), 0) + i["quantity"]
-        for h in casas:
-            if h["fim"] < self.ref and self.rng.random() < 0.5:
-                continue  # parte dos que saíram nunca configurou mínimo
-            em_casa = [f for f in h["prefs"] if (h["id"], f) in estoque]
-            fora = [f for f in h["prefs"] if (h["id"], f) not in estoque]
-            escolhidos = list(em_casa)  # monitora o que tem em casa
-            if self.rng.random() < 0.2:  # e às vezes algo que acabou
-                escolhidos += self.rng.sample(fora, k=min(len(fora), 1))
-            disciplinado = self.rng.random() < 0.8  # mantém a despensa acima do mínimo
-            for fid in escolhidos:
-                atual = estoque.get((h["id"], fid), 0)
-                if disciplinado and atual:
-                    minimo = max(1, atual - self.rng.randint(0, 3))
-                else:
-                    minimo = atual + self.rng.randint(1, 3)
-                if self.rng.random() < 0.06:
-                    minimo = 0  # configurou e desligou o alerta
-                criado = self._entre(h["cadastro"], min(h["fim"], self.ref))
-                self.pg["pantry_product_setting"].append({"food_id": fid, "profile_id": h["id"], "minimum_quantity": minimo,
-                                                          "created_at": criado,
-                                                          "updated_at": self._entre(criado, min(h["fim"], self.ref))})
-
 
 # ------------------------------------------------------------------ carga
 HIST_DDL = """
@@ -518,13 +490,12 @@ DELETE FROM store   WHERE company_id IN
     (SELECT c.id FROM company c JOIN profile p ON p.id = c.profile_id WHERE p.email LIKE %(m)s);
 DELETE FROM company WHERE profile_id IN (SELECT id FROM profile WHERE email LIKE %(m)s);
 CREATE TEMP TABLE end_bi ON COMMIT DROP AS SELECT address_id FROM profile WHERE email LIKE %(m)s;
-DELETE FROM profile WHERE email LIKE %(m)s;  -- cascata: pantry_item, settings, telefones, auth, bi_hist
+DELETE FROM profile WHERE email LIKE %(m)s;  -- cascata: pantry_item, telefones, auth, bi_hist
 DELETE FROM address a WHERE a.id IN (SELECT address_id FROM end_bi)
     AND NOT EXISTS (SELECT 1 FROM profile p WHERE p.address_id = a.id);
 -- catálogo da versão anterior do dataload BI (32 itens "NexUs BI"), se não estiver em uso
 DELETE FROM food f WHERE f.product_brand = 'NexUs BI' AND f.gtin LIKE '29%%'
-    AND NOT EXISTS (SELECT 1 FROM pantry_item i WHERE i.food_id = f.id)
-    AND NOT EXISTS (SELECT 1 FROM pantry_product_setting s WHERE s.food_id = f.id);
+    AND NOT EXISTS (SELECT 1 FROM pantry_item i WHERE i.food_id = f.id);
 """
 
 
@@ -552,7 +523,6 @@ def executar(pg):
         # SKUs de execuções anteriores que saíram do catálogo (só se ninguém usa)
         cur.execute("DELETE FROM food f WHERE f.gtin LIKE %s AND NOT (f.gtin = ANY(%s)) "
                     "AND NOT EXISTS (SELECT 1 FROM pantry_item i WHERE i.food_id = f.id) "
-                    "AND NOT EXISTS (SELECT 1 FROM pantry_product_setting s WHERE s.food_id = f.id) "
                     "AND NOT EXISTS (SELECT 1 FROM bi_hist.registro_estoque r "
                     "JOIN pantry_item i ON i.id = r.pantry_item_id WHERE i.food_id = f.id)",
                     (GTIN_PREFIXO + "%", [s["gtin"] for s in catalogo]))
