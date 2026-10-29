@@ -103,15 +103,14 @@ manualmente).
 | `store` | Lojas (vinculadas a uma company) |
 | `payment` | Pagamentos de planos |
 | `pantry_item` | Itens no estoque doméstico |
-| `pantry_product_setting` | Configuração de quantidade mínima por alimento |
 
 ### Regras de negócio
 
 As regras vivem em funções + triggers, não na camada de aplicação:
 
-- **`validate_profile_reference_type(tipo)`** — garante que `profile_id` de `pantry_item`, `pantry_product_setting`, `company` e `store` aponte para um profile do tipo esperado (`HOUSEHOLD`, `COMPANY`, `STORE`). Aplica via triggers de `BEFORE INSERT/UPDATE`.
+- **`validate_profile_reference_type(tipo)`** — garante que `profile_id` de `pantry_item`, `company` e `store` aponte para um profile do tipo esperado (`HOUSEHOLD`, `COMPANY`, `STORE`). Aplica via triggers de `BEFORE INSERT/UPDATE`.
 - **`prevent_profile_type_change()`** — impede que o `type` de um profile seja alterado depois de criado.
-- **Cobrança e estoque (V8)** — `fn_get_expiring_products`, `fn_get_items_below_minimum`, `sp_generate_monthly_payments` e `sp_update_overdue_payments` (contratos em [migrations/README.md](migrations/README.md)).
+- **Cobrança e estoque (V8)** — `fn_get_expiring_products`, `sp_generate_monthly_payments` e `sp_update_overdue_payments` (contratos em [migrations/README.md](migrations/README.md)).
 - **Auditoria (V10)** — `profile` e `payment` gravam OLD, NEW, TG_OP e CURRENT_USER em `auditoria.log_profile` e `auditoria.log_payment`, filhas de `auditoria.log_alteracao` (herança).
 
 Nota sobre IDs: as tabelas usam `SERIAL PRIMARY KEY` (auto-incremento nativo do Postgres).

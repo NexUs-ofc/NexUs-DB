@@ -8,10 +8,12 @@ A V11 adapta as views existentes ao histórico ligado a pantry_item e exclui sal
 | Tipo | Views |
 |---|---|
 | Dimensões | `dim_tempo`, `dim_alimento` (com categoria), `dim_localidade` (cidade, UF, região), `dim_perfil`, `dim_empresa` (com plano) |
-| Fatos | `fato_estoque` (1 item hoje na despensa), `fato_movimento` (1 item consumido ou descartado), `fato_estoque_minimo` (household × alimento), `fato_pagamento` (1 cobrança), `fato_cadastro` (1 perfil) |
+| Fatos | `fato_estoque` (1 item hoje na despensa), `fato_movimento` (1 item consumido ou descartado), `fato_pagamento` (1 cobrança), `fato_cadastro` (1 perfil) |
 | Evolução | `kpi_d1_evolucao_mensal`: running total da perda, variação mês a mês (`LAG`), média móvel e `RANK` |
-| Cards | `vw_kpi_cards`: valor, meta, desvio e situação de D1–D9 (+ financeiro e base ativa) |
+| Cards | `vw_kpi_cards`: valor, meta, desvio e situação de D1, D3–D5 e D7–D9 (+ financeiro e base ativa) |
 | Volume | `vw_volume_tabelas`: registros por tabela e se atinge 500 (company/store limitadas pelos profiles) |
+
+A V12 remove a configuração de estoque mínimo e o indicador D6. Os demais indicadores permanecem disponíveis.
 
 ## KPIs de desperdício
 
@@ -21,7 +23,6 @@ A V11 adapta as views existentes ao histórico ligado a pantry_item e exclui sal
 | D3 — % itens vencidos na despensa | vencidos / itens com validade | `kpi_d3_d4_d8_validade_uf` |
 | D4 — % a vencer em 7 dias | validade em até 7 dias / itens com validade | `kpi_d3_d4_d8_validade_uf` |
 | D5 — Ranking de vencimento | DENSE_RANK por UF de (vencidos + a vencer em 30 dias) | `kpi_d5_ranking_vencimento_uf` |
-| D6 — Estoque abaixo do mínimo | households abaixo / households com mínimo configurado | `kpi_d6_estoque_minimo_uf` |
 | D7 — Vida útil no cadastro | expiry_date − created_at (dias) | `kpi_d7_vida_util_categoria` |
 | D8 — % itens sem validade | COUNT(expiry_date IS NULL) / COUNT(*) | `kpi_d3_d4_d8_validade_uf` |
 | D9 — Índice de desperdício por categoria | expirados da categoria / households com a categoria | `kpi_d9_desperdicio_categoria` |

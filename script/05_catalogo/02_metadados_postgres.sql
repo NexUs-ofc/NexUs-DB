@@ -1,6 +1,6 @@
 -- =============================================================================
 -- NexUs — Catálogo de metadados (2/3): tabelas e views do PostgreSQL
--- Migrations V1-V11, monitoramento (DAU) e schemas bi e bi_hist.
+-- Migrations V1-V12, monitoramento (DAU) e schemas bi e bi_hist.
 -- Pode rodar de novo quando quiser: apaga e recarrega só os metadados do PostgreSQL.
 -- Requer 01_estrutura.sql já executado.
 -- =============================================================================
@@ -18,7 +18,6 @@ INSERT INTO catalogo.objeto (banco, schema_nome, objeto_nome, tipo_objeto, descr
     ('POSTGRESQL', 'public', 'company', 'TABELA', 'Empresa cliente (B2B). Cada empresa é também um perfil COMPANY.'),
     ('POSTGRESQL', 'public', 'food', 'TABELA', 'Catálogo de alimentos (SKU): produto + marca + embalagem, identificado pelo GTIN.'),
     ('POSTGRESQL', 'public', 'pantry_item', 'TABELA', 'Lotes de estoque do household, inclusive encerrados com saldo zero. A API lista apenas saldos positivos.'),
-    ('POSTGRESQL', 'public', 'pantry_product_setting', 'TABELA', 'Estoque mínimo que o household quer manter de cada alimento (gera alerta de reposição).'),
     ('POSTGRESQL', 'public', 'payment', 'TABELA', 'Cobranças mensais do plano de cada empresa.'),
     ('POSTGRESQL', 'public', 'plan', 'TABELA', 'Domínio: planos de assinatura das empresas (Ceris, Enterprise, Exclusive).'),
     ('POSTGRESQL', 'public', 'profile', 'TABELA', 'Perfil de acesso ao NexUs. O tipo define o papel e não pode mudar depois de criado (trg_profile_type_lock).'),
@@ -31,16 +30,14 @@ INSERT INTO catalogo.objeto (banco, schema_nome, objeto_nome, tipo_objeto, descr
     ('POSTGRESQL', 'bi', 'dim_tempo', 'VIEW', 'Dimensão calendário (1 linha por dia) do primeiro cadastro até 1 ano à frente. sk_data = -1 é "não informado".'),
     ('POSTGRESQL', 'bi', 'fato_cadastro', 'VIEW', 'Fato cadastro. Grão: 1 perfil.'),
     ('POSTGRESQL', 'bi', 'fato_estoque', 'VIEW', 'Fato estoque. Grão: 1 item hoje na despensa.'),
-    ('POSTGRESQL', 'bi', 'fato_estoque_minimo', 'VIEW', 'Fato estoque mínimo. Grão: household x alimento com mínimo > 0.'),
     ('POSTGRESQL', 'bi', 'fato_movimento', 'VIEW', 'Fato movimento. Grão: 1 item consumido ou descartado (bi_hist.registro_estoque).'),
     ('POSTGRESQL', 'bi', 'fato_pagamento', 'VIEW', 'Fato pagamento. Grão: 1 cobrança mensal.'),
     ('POSTGRESQL', 'bi', 'kpi_d1_desperdicio_mensal', 'VIEW', 'D1: taxa de desperdício = expirados / (expirados + consumidos), por mês e região.'),
     ('POSTGRESQL', 'bi', 'kpi_d3_d4_d8_validade_uf', 'VIEW', 'D3 (% vencidos), D4 (% a vencer em 7 dias) e D8 (% sem validade) dos itens na despensa, por UF.'),
     ('POSTGRESQL', 'bi', 'kpi_d5_ranking_vencimento_uf', 'VIEW', 'D5: ranking de UFs por itens vencidos ou a vencer em 30 dias.'),
-    ('POSTGRESQL', 'bi', 'kpi_d6_estoque_minimo_uf', 'VIEW', 'D6: % de households com algum alimento abaixo do mínimo, por UF.'),
     ('POSTGRESQL', 'bi', 'kpi_d7_vida_util_categoria', 'VIEW', 'D7: vida útil no cadastro (validade - entrada), por categoria.'),
     ('POSTGRESQL', 'bi', 'kpi_d9_desperdicio_categoria', 'VIEW', 'D9: itens expirados da categoria / households que têm a categoria.'),
-    ('POSTGRESQL', 'bi', 'vw_kpi_cards', 'VIEW', 'Cards do dashboard: valor, meta, desvio e situação de D1-D9, financeiro (F1, F2) e base ativa (U1).'),
+    ('POSTGRESQL', 'bi', 'vw_kpi_cards', 'VIEW', 'Cards do dashboard: valor, meta, desvio e situação de D1, D3–D5 e D7–D9, financeiro (F1, F2) e base ativa (U1).'),
     ('POSTGRESQL', 'bi', 'vw_volume_tabelas', 'VIEW', 'Teste de volume: registros por tabela e se atinge 500.'),
     ('POSTGRESQL', 'bi_hist', 'registro_estoque', 'TABELA', 'Saídas reais do Core e dados simulados identificados pelo perfil. Uma linha por consumo ou descarte, ligada ao lote preservado em pantry_item.'),
     ('POSTGRESQL', 'bi', 'kpi_d1_evolucao_mensal', 'VIEW', 'D1 por mês com running total da perda, variação mês a mês, média móvel de 3 meses e ranking (window functions).'),
@@ -151,20 +148,6 @@ CROSS JOIN (VALUES
     ('created_at', 6, 'timestamp without time zone', FALSE, 'CURRENT_TIMESTAMP', NULL, NULL, 'INTERNO', 'Quando o item entrou na despensa (compra).')
 ) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
 WHERE o.banco = 'POSTGRESQL' AND o.schema_nome = 'public' AND o.objeto_nome = 'pantry_item';
-
--- public.pantry_product_setting
-INSERT INTO catalogo.coluna (objeto_id, coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
-SELECT o.id, v.coluna_nome, v.posicao, v.tipo_dado, v.aceita_nulo, v.valor_padrao, v.chave, v.referencia, v.classificacao_lgpd, v.descricao
-FROM catalogo.objeto o
-CROSS JOIN (VALUES
-    ('id', 1, 'integer', FALSE, 'nextval(''pantry_product_setting_id_seq''::regclass)', 'PK', NULL, 'INTERNO', 'Identificador da configuração (serial).'),
-    ('food_id', 2, 'integer', FALSE, NULL, 'FK, UK', 'food.id', 'INTERNO', 'Alimento monitorado (FK food.id, cascata).'),
-    ('profile_id', 3, 'integer', FALSE, NULL, 'FK, UK', 'profile.id', 'INTERNO', 'Household (FK profile.id, cascata). Único por household e alimento.'),
-    ('minimum_quantity', 4, 'integer', FALSE, '0', NULL, NULL, 'INTERNO', 'Quantidade mínima de embalagens; 0 desliga o alerta.'),
-    ('created_at', 5, 'timestamp without time zone', FALSE, 'CURRENT_TIMESTAMP', NULL, NULL, 'INTERNO', 'Data de criação da configuração.'),
-    ('updated_at', 6, 'timestamp without time zone', FALSE, 'CURRENT_TIMESTAMP', NULL, NULL, 'INTERNO', 'Data da última alteração do mínimo.')
-) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
-WHERE o.banco = 'POSTGRESQL' AND o.schema_nome = 'public' AND o.objeto_nome = 'pantry_product_setting';
 
 -- public.payment
 INSERT INTO catalogo.coluna (objeto_id, coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
@@ -347,20 +330,6 @@ CROSS JOIN (VALUES
 ) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
 WHERE o.banco = 'POSTGRESQL' AND o.schema_nome = 'bi' AND o.objeto_nome = 'fato_estoque';
 
--- bi.fato_estoque_minimo
-INSERT INTO catalogo.coluna (objeto_id, coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
-SELECT o.id, v.coluna_nome, v.posicao, v.tipo_dado, v.aceita_nulo, v.valor_padrao, v.chave, v.referencia, v.classificacao_lgpd, v.descricao
-FROM catalogo.objeto o
-CROSS JOIN (VALUES
-    ('sk_perfil', 1, 'integer', TRUE, NULL, NULL, NULL, 'INTERNO', 'FK dim_perfil.'),
-    ('sk_alimento', 2, 'integer', TRUE, NULL, NULL, NULL, 'INTERNO', 'FK dim_alimento.'),
-    ('sk_localidade', 3, 'integer', TRUE, NULL, NULL, NULL, 'INTERNO', 'FK dim_localidade.'),
-    ('estoque', 4, 'bigint', TRUE, NULL, NULL, NULL, 'INTERNO', 'Embalagens hoje na despensa.'),
-    ('minimo', 5, 'integer', TRUE, NULL, NULL, NULL, 'INTERNO', 'Mínimo configurado.'),
-    ('abaixo_minimo', 6, 'integer', TRUE, NULL, NULL, NULL, 'INTERNO', '1 se o estoque está abaixo do mínimo.')
-) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
-WHERE o.banco = 'POSTGRESQL' AND o.schema_nome = 'bi' AND o.objeto_nome = 'fato_estoque_minimo';
-
 -- bi.fato_movimento
 INSERT INTO catalogo.coluna (objeto_id, coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
 SELECT o.id, v.coluna_nome, v.posicao, v.tipo_dado, v.aceita_nulo, v.valor_padrao, v.chave, v.referencia, v.classificacao_lgpd, v.descricao
@@ -445,19 +414,6 @@ CROSS JOIN (VALUES
 ) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
 WHERE o.banco = 'POSTGRESQL' AND o.schema_nome = 'bi' AND o.objeto_nome = 'kpi_d5_ranking_vencimento_uf';
 
--- bi.kpi_d6_estoque_minimo_uf
-INSERT INTO catalogo.coluna (objeto_id, coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
-SELECT o.id, v.coluna_nome, v.posicao, v.tipo_dado, v.aceita_nulo, v.valor_padrao, v.chave, v.referencia, v.classificacao_lgpd, v.descricao
-FROM catalogo.objeto o
-CROSS JOIN (VALUES
-    ('uf', 1, 'bpchar', TRUE, NULL, NULL, NULL, 'INTERNO', 'UF (nulo = Brasil).'),
-    ('regiao', 2, 'text', TRUE, NULL, NULL, NULL, 'INTERNO', 'Região.'),
-    ('households_com_minimo', 3, 'bigint', TRUE, NULL, NULL, NULL, 'INTERNO', 'Households com mínimo configurado.'),
-    ('households_abaixo', 4, 'bigint', TRUE, NULL, NULL, NULL, 'INTERNO', 'Households com algum item abaixo do mínimo.'),
-    ('d6_abaixo_minimo_pct', 5, 'numeric', TRUE, NULL, NULL, NULL, 'INTERNO', 'D6 em %.')
-) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
-WHERE o.banco = 'POSTGRESQL' AND o.schema_nome = 'bi' AND o.objeto_nome = 'kpi_d6_estoque_minimo_uf';
-
 -- bi.kpi_d7_vida_util_categoria
 INSERT INTO catalogo.coluna (objeto_id, coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
 SELECT o.id, v.coluna_nome, v.posicao, v.tipo_dado, v.aceita_nulo, v.valor_padrao, v.chave, v.referencia, v.classificacao_lgpd, v.descricao
@@ -490,7 +446,7 @@ INSERT INTO catalogo.coluna (objeto_id, coluna_nome, posicao, tipo_dado, aceita_
 SELECT o.id, v.coluna_nome, v.posicao, v.tipo_dado, v.aceita_nulo, v.valor_padrao, v.chave, v.referencia, v.classificacao_lgpd, v.descricao
 FROM catalogo.objeto o
 CROSS JOIN (VALUES
-    ('codigo', 1, 'text', TRUE, NULL, NULL, NULL, 'INTERNO', 'Código do KPI (D1..D9, F1, F2, U1).'),
+    ('codigo', 1, 'text', TRUE, NULL, NULL, NULL, 'INTERNO', 'Código do KPI (D1, D3–D5 e D7–D9, F1, F2, U1).'),
     ('kpi', 2, 'text', TRUE, NULL, NULL, NULL, 'INTERNO', 'Nome do KPI.'),
     ('valor', 3, 'numeric', TRUE, NULL, NULL, NULL, 'INTERNO', 'Valor atual.'),
     ('unidade', 4, 'text', TRUE, NULL, NULL, NULL, 'INTERNO', 'Unidade do valor.'),
@@ -566,7 +522,6 @@ FROM (VALUES
     ('public', 'profile', 'Tipo imutável (trg_profile_type_lock). HOUSEHOLD e STORE exigem endereço (V7). Status BLOCKED/ACTIVE de empresas e lojas é controlado por sp_update_overdue_payments. Alterações auditadas em auditoria.log_profile.'),
     ('public', 'payment', 'Uma cobrança por empresa e competência (uq_payment_company_period). Geradas por sp_generate_monthly_payments; PENDING vencida vira OVERDUE em sp_update_overdue_payments. Alterações auditadas em auditoria.log_payment.'),
     ('public', 'pantry_item', 'Só para perfis HOUSEHOLD (trg_pantry_household_type). Quantidade > 0. Inserir ou alterar registra o household no DAU (trg_dau_pantry_item). Vencimentos: fn_get_expiring_products.'),
-    ('public', 'pantry_product_setting', 'Só para perfis HOUSEHOLD. Um mínimo por household e alimento. Faltas: fn_get_items_below_minimum.'),
     ('public', 'company', 'profile_id deve ser um perfil COMPANY (trg_company_profile_type).'),
     ('public', 'store', 'profile_id deve ser um perfil STORE (trg_store_profile_type). Abertura e fechamento juntos e fechamento > abertura.'),
     ('public', 'auth_method', 'Um método por provedor e perfil; subject do Google único (uq_external_auth_identity).'),

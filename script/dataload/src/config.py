@@ -17,7 +17,6 @@ TAMANHOS = {
     "store": 10,
     "payment": 30,
     "pantry_item": 150,
-    "pantry_product_setting": 120,
     "recipe": 30,
     "event": 40,
     "recipe_account": 30,

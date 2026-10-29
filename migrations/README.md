@@ -18,7 +18,8 @@ migrations/
 ├── V8__profile_restrictions_store_hours_billing_and_indexes.sql # perfil, horários, cobrança e índices
 ├── V9__food_image_url.sql           # imagem do produto trazida da api
 ├── V10__audit_triggers.sql          # auditoria de profile e payment (herança de tabelas)
-└── V11__record_stock_movements_and_preserve_empty_items.sql # movimentos reais e lotes com saldo zero
+├── V11__record_stock_movements_and_preserve_empty_items.sql # movimentos reais e lotes com saldo zero
+└── V12__drop_pantry_product_setting.sql # remove configurações de estoque mínimo
 ```
 
 O schema é compartilhado entre os serviços do NexUs, então o contrato do
@@ -50,6 +51,10 @@ aplicativo, mas era criada fora das migrations anteriores. O CI reproduz essa se
 
 Novas mudanças de schema devem ser adicionadas com a próxima versão disponível,
 nunca alterando os arquivos já aplicados.
+
+## V12 — remoção do estoque mínimo
+
+Remove `public.pantry_product_setting` e `fn_get_items_below_minimum(INTEGER)`. Quando o BI existe, remove o fato de estoque mínimo e o indicador D6, preservando os demais cards e a contagem de volume. Não usa CASCADE: dependências desconhecidas interrompem a migration. As configurações existentes são descartadas.
 
 ## V11 — movimentos de estoque
 
@@ -90,7 +95,7 @@ essa regra.
 | Objeto | Contrato |
 | --- | --- |
 | fn_get_expiring_products(início, fim) | Janela inclusiva; retorna somente itens de perfis ACTIVE, ordenados por validade e ID. |
-| fn_get_items_below_minimum(profile_id opcional) | Considera validade hoje ou futura e validade ausente; inclui alimentos configurados sem estoque. |
+| fn_get_items_below_minimum(profile_id opcional) | Removida na V12 junto com a configuração de estoque mínimo. |
 | sp_generate_monthly_payments(data opcional, dia opcional, INOUT quantidade) | Dia padrão 10, aceito entre 1 e 28; uma cobrança por empresa/competência; inclui BLOCKED e exclui INACTIVE. |
 | sp_update_overdue_payments(tolerância opcional, INOUT vencidos, INOUT bloqueados, INOUT reativados) | Tolerância não negativa; pagamentos vencem após o dia limite; contagens de bloqueio/reativação são de empresas. |
 

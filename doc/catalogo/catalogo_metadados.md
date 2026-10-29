@@ -6,7 +6,7 @@ rode os scripts de [script/05_catalogo/](../../script/05_catalogo/) na ordem `01
 
 | # | Seção | Conteúdo |
 |---|---|---|
-| 1 | [PostgreSQL — schema `public`](#1-postgresql-schema-public) | 12 tabelas transacionais, 5 enums, regras de negócio e diagrama ER |
+| 1 | [PostgreSQL — schema `public`](#1-postgresql-schema-public) | 11 tabelas transacionais, 5 enums, regras de negócio e diagrama ER |
 | 2 | [Data mart — schemas `bi` e `bi_hist`](#2-data-mart-schemas-bi-e-bi_hist) | Dimensões, fatos e KPIs de desperdício (star schema) |
 | 3 | [MongoDB](#3-mongodb) | 9 collections: receitas, eventos, notificações, IA e telemetria |
 
@@ -16,7 +16,7 @@ Para cada tabela, view ou collection: descrição e, por coluna, **tipo**, **nul
 **chave** (PK, FK com destino, UK), **classificação LGPD** e **descrição**. Abaixo de cada tabela
 ficam as regras (checks, FKs com ação de `ON DELETE`, índices e triggers).
 
-Fonte: migrations `V1` a `V10`, `script/04_monitoramento/script_dau.sql`,
+Fonte: migrations `V1` a `V12`, `script/04_monitoramento/script_dau.sql`,
 `script/03_bi_views/datamart_estrela.sql` e as factories do dataload (MongoDB). A conferência
 catálogo × banco real está em [engenharia_de_dados.md](../engenharia_de_dados.md).
 
@@ -48,7 +48,6 @@ No banco: tabela `catalogo.nivel_acesso`, exposta em `catalogo.vw_dicionario_dad
 | Household | Casa/usuário final do app; dono da despensa. Perfil do tipo `HOUSEHOLD`. |
 | Company / Store | Empresa cliente (B2B) e suas lojas; cada uma também é um perfil. |
 | Despensa | Itens que o household tem hoje (`pantry_item`), na despensa, geladeira ou freezer. |
-| Estoque mínimo | Quantidade que o household quer manter de um alimento (`pantry_product_setting`). |
 | GTIN | Código de barras do produto (EAN-13 no Brasil, prefixo 789). |
 | SK | *Surrogate key*: chave das dimensões no data mart. `-1` = não informado. |
 | Grão | O que uma linha da tabela fato representa. |
@@ -70,7 +69,6 @@ No banco: tabela `catalogo.nivel_acesso`, exposta em `catalogo.vw_dicionario_dad
 | [`company`](#company) | tabela | 4 | Empresa cliente (B2B). Cada empresa é também um perfil COMPANY. |
 | [`food`](#food) | tabela | 8 | Catálogo de alimentos (SKU): produto + marca + embalagem, identificado pelo GTIN. |
 | [`pantry_item`](#pantry_item) | tabela | 6 | Itens na despensa, geladeira ou freezer do household hoje. Um registro por lote comprado. |
-| [`pantry_product_setting`](#pantry_product_setting) | tabela | 6 | Estoque mínimo que o household quer manter de cada alimento (gera alerta de reposição). |
 | [`payment`](#payment) | tabela | 11 | Cobranças mensais do plano de cada empresa. |
 | [`plan`](#plan) | tabela | 8 | Domínio: planos de assinatura das empresas (Ceris, Enterprise, Exclusive). |
 | [`profile`](#profile) | tabela | 9 | Perfil de acesso ao NexUs. O tipo define o papel e não pode mudar depois de criado (trg_profile_type_lock). |
@@ -132,14 +130,6 @@ erDiagram
         date expiry_date
         timestamp created_at
     }
-    pantry_product_setting {
-        integer id PK
-        integer food_id FK,UK
-        integer profile_id FK,UK
-        integer minimum_quantity
-        timestamp created_at
-        timestamp updated_at
-    }
     payment {
         integer id PK
         date due_date
@@ -192,8 +182,6 @@ erDiagram
     category ||--o{ food : "category_id"
     food ||--o{ pantry_item : "food_id"
     profile ||--o{ pantry_item : "profile_id"
-    food ||--o{ pantry_product_setting : "food_id"
-    profile ||--o{ pantry_product_setting : "profile_id"
     company ||--o{ payment : "company_id"
     plan ||--o{ payment : "plan_id"
     address |o--o{ profile : "address_id"
@@ -337,27 +325,6 @@ Regras:
 - **FK** `pantry_item_profile_id_fkey`: ON DELETE CASCADE
 - **trigger** `trg_pantry_household_type` → `validate_profile_reference_type('HOUSEHOLD')`
 
-#### `pantry_product_setting`
-
-*tabela* — Estoque mínimo que o household quer manter de cada alimento (gera alerta de reposição).
-
-| Coluna | Tipo | Nulo | Padrão | Chave | LGPD | Descrição |
-|---|---|---|---|---|---|---|
-| `id` | integer | não | nextval('pantry_product_setting_id_seq'::regclass) | PK | INTERNO | Identificador da configuração (serial). |
-| `food_id` | integer | não | — | FK → `food.id`, UK (profile_id, food_id) | INTERNO | Alimento monitorado (FK food.id, cascata). |
-| `profile_id` | integer | não | — | FK → `profile.id`, UK (profile_id, food_id) | INTERNO | Household (FK profile.id, cascata). Único por household e alimento. |
-| `minimum_quantity` | integer | não | 0 | — | INTERNO | Quantidade mínima de embalagens; 0 desliga o alerta. |
-| `created_at` | timestamp without time zone | não | CURRENT_TIMESTAMP | — | INTERNO | Data de criação da configuração. |
-| `updated_at` | timestamp without time zone | não | CURRENT_TIMESTAMP | — | INTERNO | Data da última alteração do mínimo. |
-
-Regras:
-
-- **check** `pantry_product_setting_minimum_quantity_check`: `CHECK ((minimum_quantity >= 0))`
-- **FK** `pantry_product_setting_food_id_fkey`: ON DELETE CASCADE
-- **FK** `pantry_product_setting_profile_id_fkey`: ON DELETE CASCADE
-- **único** `uq_pantry_product_setting`: (profile_id, food_id)
-- **trigger** `trg_pantry_product_setting_household_type` → `validate_profile_reference_type('HOUSEHOLD')`
-
 #### `payment`
 
 *tabela* — Cobranças mensais do plano de cada empresa.
@@ -478,11 +445,10 @@ Regras:
 | `register_daily_activity(user_id, [momento])` | Registra o acesso/login do usuário no DAU do dia (fuso America/Sao_Paulo), sem duplicar; mantém o horário do 1º acesso. Retorna TRUE no 1º acesso do dia. Chamada pelo auth-api após autenticar e pelo trigger `trg_dau_pantry_item`. | `daily_active_users`, `pantry_item` |
 | `auditoria.fn_registrar_alteracao()` | Trigger de auditoria (V10): grava OLD, NEW, TG_OP e CURRENT_USER em `auditoria.log_<tabela>`. | `profile` (trg_audit_profile), `payment` (trg_audit_payment) |
 | `fn_get_expiring_products(início, fim)` | Itens de perfis ACTIVE que vencem na janela (V8). | `pantry_item` |
-| `fn_get_items_below_minimum([profile_id])` | Alimentos abaixo do mínimo configurado (V8). | `pantry_product_setting` |
 | `sp_generate_monthly_payments(...)` | Procedure: gera a cobrança mensal das empresas sem duplicar competência (V8). | `payment` |
 | `sp_update_overdue_payments(...)` | Procedure: marca cobranças vencidas e bloqueia/reativa empresa e lojas (V8). | `payment`, `profile` |
 | `prevent_profile_type_change()` | Trigger: impede alterar profile.type depois do cadastro. | `profile` (trg_profile_type_lock) |
-| `validate_profile_reference_type()` | Trigger: garante que profile_id aponte para um perfil do tipo passado como argumento (HOUSEHOLD, COMPANY ou STORE). | `company` (trg_company_profile_type), `pantry_item` (trg_pantry_household_type), `pantry_product_setting` (trg_pantry_product_setting_household_type), `store` (trg_store_profile_type) |
+| `validate_profile_reference_type()` | Trigger: garante que profile_id aponte para um perfil do tipo passado como argumento (HOUSEHOLD, COMPANY ou STORE). | `company` (trg_company_profile_type), `pantry_item` (trg_pantry_household_type), `store` (trg_store_profile_type) |
 
 ### Auditoria (schema `auditoria`, V10)
 
@@ -521,17 +487,15 @@ Modelo em estrela: os fatos apontam para as dimensões pelas colunas `sk_*`; cha
 | [`bi.dim_tempo`](#bidim_tempo) | dimensão | 8 | Dimensão calendário (1 linha por dia) do primeiro cadastro até 1 ano à frente. sk_data = -1 é "não informado". |
 | [`bi.fato_cadastro`](#bifato_cadastro) | fato | 4 | Fato cadastro. Grão: 1 perfil. |
 | [`bi.fato_estoque`](#bifato_estoque) | fato | 11 | Fato estoque. Grão: 1 item hoje na despensa. |
-| [`bi.fato_estoque_minimo`](#bifato_estoque_minimo) | fato | 6 | Fato estoque mínimo. Grão: household x alimento com mínimo > 0. |
 | [`bi.fato_movimento`](#bifato_movimento) | fato | 14 | Fato movimento. Grão: 1 item consumido ou descartado (bi_hist.registro_estoque). |
 | [`bi.fato_pagamento`](#bifato_pagamento) | fato | 8 | Fato pagamento. Grão: 1 cobrança mensal. |
 | [`bi.kpi_d1_desperdicio_mensal`](#bikpi_d1_desperdicio_mensal) | KPI | 6 | D1: taxa de desperdício = expirados / (expirados + consumidos), por mês e região. |
 | [`bi.kpi_d1_evolucao_mensal`](#bikpi_d1_evolucao_mensal) | KPI | 9 | D1 por mês com running total da perda, variação (LAG), média móvel e ranking. |
 | [`bi.kpi_d3_d4_d8_validade_uf`](#bikpi_d3_d4_d8_validade_uf) | KPI | 10 | D3 (% vencidos), D4 (% a vencer em 7 dias) e D8 (% sem validade) dos itens na despensa, por UF. |
 | [`bi.kpi_d5_ranking_vencimento_uf`](#bikpi_d5_ranking_vencimento_uf) | KPI | 6 | D5: ranking de UFs por itens vencidos ou a vencer em 30 dias. |
-| [`bi.kpi_d6_estoque_minimo_uf`](#bikpi_d6_estoque_minimo_uf) | KPI | 5 | D6: % de households com algum alimento abaixo do mínimo, por UF. |
 | [`bi.kpi_d7_vida_util_categoria`](#bikpi_d7_vida_util_categoria) | KPI | 6 | D7: vida útil no cadastro (validade - entrada), por categoria. |
 | [`bi.kpi_d9_desperdicio_categoria`](#bikpi_d9_desperdicio_categoria) | KPI | 5 | D9: itens expirados da categoria / households que têm a categoria. |
-| [`bi.vw_kpi_cards`](#bivw_kpi_cards) | painel | 7 | Cards do dashboard: valor, meta, desvio e situação de D1-D9, financeiro (F1, F2) e base ativa (U1). |
+| [`bi.vw_kpi_cards`](#bivw_kpi_cards) | painel | 7 | Cards do dashboard: valor, meta, desvio e situação de D1, D3–D5 e D7–D9, financeiro (F1, F2) e base ativa (U1). |
 | [`bi.vw_volume_tabelas`](#bivw_volume_tabelas) | painel | 3 | Teste de volume: registros por tabela e se atinge 500. |
 
 ### Histórico
@@ -660,19 +624,6 @@ Regras:
 | `vida_util_dias` | integer | sim | — | — | INTERNO | Validade - data de entrada (D7). |
 | `status_validade` | text | sim | — | — | INTERNO | SEM_VALIDADE, VENCIDO, VENCE_7D, VENCE_30D ou OK. |
 
-#### `bi.fato_estoque_minimo`
-
-*view* — Fato estoque mínimo. Grão: household x alimento com mínimo > 0.
-
-| Coluna | Tipo | Nulo | Padrão | Chave | LGPD | Descrição |
-|---|---|---|---|---|---|---|
-| `sk_perfil` | integer | sim | — | — | INTERNO | FK dim_perfil. |
-| `sk_alimento` | integer | sim | — | — | INTERNO | FK dim_alimento. |
-| `sk_localidade` | integer | sim | — | — | INTERNO | FK dim_localidade. |
-| `estoque` | bigint | sim | — | — | INTERNO | Embalagens hoje na despensa. |
-| `minimo` | integer | sim | — | — | INTERNO | Mínimo configurado. |
-| `abaixo_minimo` | integer | sim | — | — | INTERNO | 1 se o estoque está abaixo do mínimo. |
-
 #### `bi.fato_movimento`
 
 *view* — Fato movimento. Grão: 1 item consumido ou descartado (bi_hist.registro_estoque).
@@ -770,18 +721,6 @@ Regras:
 | `itens_em_risco` | bigint | sim | — | — | INTERNO | Vencidos + a vencer em 30 dias. |
 | `ranking` | bigint | sim | — | — | INTERNO | DENSE_RANK por itens em risco (1 = pior). |
 
-#### `bi.kpi_d6_estoque_minimo_uf`
-
-*view* — D6: % de households com algum alimento abaixo do mínimo, por UF.
-
-| Coluna | Tipo | Nulo | Padrão | Chave | LGPD | Descrição |
-|---|---|---|---|---|---|---|
-| `uf` | bpchar | sim | — | — | INTERNO | UF (nulo = Brasil). |
-| `regiao` | text | sim | — | — | INTERNO | Região. |
-| `households_com_minimo` | bigint | sim | — | — | INTERNO | Households com mínimo configurado. |
-| `households_abaixo` | bigint | sim | — | — | INTERNO | Households com algum item abaixo do mínimo. |
-| `d6_abaixo_minimo_pct` | numeric | sim | — | — | INTERNO | D6 em %. |
-
 #### `bi.kpi_d7_vida_util_categoria`
 
 *view* — D7: vida útil no cadastro (validade - entrada), por categoria.
@@ -811,11 +750,11 @@ Regras:
 
 #### `bi.vw_kpi_cards`
 
-*view* — Cards do dashboard: valor, meta, desvio e situação de D1-D9, financeiro (F1, F2) e base ativa (U1).
+*view* — Cards do dashboard: valor, meta, desvio e situação de D1, D3–D5 e D7–D9, financeiro (F1, F2) e base ativa (U1).
 
 | Coluna | Tipo | Nulo | Padrão | Chave | LGPD | Descrição |
 |---|---|---|---|---|---|---|
-| `codigo` | text | sim | — | — | INTERNO | Código do KPI (D1..D9, F1, F2, U1). |
+| `codigo` | text | sim | — | — | INTERNO | Código do KPI (D1, D3–D5 e D7–D9, F1, F2, U1). |
 | `kpi` | text | sim | — | — | INTERNO | Nome do KPI. |
 | `valor` | numeric | sim | — | — | INTERNO | Valor atual. |
 | `unidade` | text | sim | — | — | INTERNO | Unidade do valor. |

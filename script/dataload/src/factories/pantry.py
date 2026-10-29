@@ -1,10 +1,9 @@
-import itertools
 import random
 
 from ..config import TAMANHOS
 from ..core.ids import RANGES
 from ..core.rng import get_faker
-from ..core.schemas.pantry import PantryItem, PantryProductSetting
+from ..core.schemas.pantry import PantryItem
 
 fake = get_faker()
 
@@ -18,24 +17,4 @@ def build_pantry_items() -> list[PantryItem]:
             expiry_date=fake.date_between(start_date="today", end_date="+180d"),
         )
         for _ in range(TAMANHOS["pantry_item"])
-    ]
-
-
-def build_pantry_product_setting(food_count: int) -> list[PantryProductSetting]:
-    combinacoes = list(itertools.product(
-        RANGES["household"],
-        range(1, food_count + 1),
-    ))
-    if len(combinacoes) < TAMANHOS["pantry_product_setting"]:
-        raise ValueError("Nao ha combinacoes suficientes (household x food).")
-
-    pares = random.sample(combinacoes, TAMANHOS["pantry_product_setting"])
-
-    return [
-        PantryProductSetting(
-            profile_id=profile_id,
-            food_id=food_id,
-            minimum_quantity=random.randint(0, 10),
-        )
-        for profile_id, food_id in pares
     ]

@@ -1,4 +1,3 @@
-from ..config import TAMANHOS
 from ..factories import account, address, billing, catalog, pantry
 from ..factories.base import to_dicts
 from ..seed import get_all_fixed
@@ -26,10 +25,6 @@ def run(pg, *, reset: bool = False):
         pg.bulk_insert("payment", to_dicts(billing.build_payments()))
 
         pg.bulk_insert("pantry_item", to_dicts(pantry.build_pantry_items()))
-        pg.bulk_insert(
-            "pantry_product_setting",
-            to_dicts(pantry.build_pantry_product_setting(TAMANHOS["food"])),
-        )
 
         pg.commit()
     except Exception:
