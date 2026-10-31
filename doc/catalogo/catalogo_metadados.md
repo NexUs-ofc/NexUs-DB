@@ -669,7 +669,7 @@ Regras:
 | `sk_perfil` | integer | sim | — | — | INTERNO | FK dim_perfil. |
 | `sk_alimento` | integer | sim | — | — | INTERNO | FK dim_alimento. |
 | `sk_localidade` | integer | sim | — | — | INTERNO | FK dim_localidade. |
-| `estoque` | bigint | sim | — | — | INTERNO | Embalagens hoje na despensa. |
+| `estoque` | bigint | sim | — | — | INTERNO | Embalagens hoje na despensa, sem lotes vencidos. |
 | `minimo` | integer | sim | — | — | INTERNO | Mínimo configurado. |
 | `abaixo_minimo` | integer | sim | — | — | INTERNO | 1 se o estoque está abaixo do mínimo. |
 

@@ -355,7 +355,7 @@ CROSS JOIN (VALUES
     ('sk_perfil', 1, 'integer', TRUE, NULL, NULL, NULL, 'INTERNO', 'FK dim_perfil.'),
     ('sk_alimento', 2, 'integer', TRUE, NULL, NULL, NULL, 'INTERNO', 'FK dim_alimento.'),
     ('sk_localidade', 3, 'integer', TRUE, NULL, NULL, NULL, 'INTERNO', 'FK dim_localidade.'),
-    ('estoque', 4, 'bigint', TRUE, NULL, NULL, NULL, 'INTERNO', 'Embalagens hoje na despensa.'),
+    ('estoque', 4, 'bigint', TRUE, NULL, NULL, NULL, 'INTERNO', 'Embalagens hoje na despensa, sem lotes vencidos.'),
     ('minimo', 5, 'integer', TRUE, NULL, NULL, NULL, 'INTERNO', 'Mínimo configurado.'),
     ('abaixo_minimo', 6, 'integer', TRUE, NULL, NULL, NULL, 'INTERNO', '1 se o estoque está abaixo do mínimo.')
 ) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
