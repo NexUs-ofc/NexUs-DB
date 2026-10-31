@@ -10,7 +10,7 @@ Bancos do projeto:
 
 | # | Requisito | Antes | Agora | O que foi feito / evidência | Arquivos |
 |---|---|---|---|---|---|
-| 1 | Massa ≥ 500 registros | Concluído (sem validação registrada) | **Concluído** | Perfil BI gera 520 por tabela; `bi.vw_volume_tabelas` confirma ≥ 500 em 9 tabelas (category/plan são domínio fixo; company/store dividem os profiles). Reexecução não duplica (520 perfis BI após 2 cargas). | `script/dataload/src/bi.py` |
+| 1 | Massa ≥ 500 registros | Concluído (sem validação registrada) | **Concluído** | Perfil BI gera ≥ 520 por tabela (despensa ~3 mil, mínimos ~2,2 mil e histórico ~9,6 mil, sem amostra, para KPIs mensais estáveis); `bi.vw_volume_tabelas` confirma ≥ 500 em 9 tabelas (category/plan são domínio fixo; company/store dividem os profiles). Reexecução não duplica (520 perfis BI e 9.590 eventos após 2 cargas). | `script/dataload/src/bi.py` |
 | 2a | Integração RPA legado → novo | Concluído | **Concluído (sem alteração)** | RPA já funcional, com o legado configurado no `.env`. Não foi modificado. Validado à parte com um legado de teste no ambiente isolado (não versionado): carga, reexecução sem duplicar (0 novos), correção de registro rejeitado, falha com `FALHA` em `rpa.execucao` e retomada. | `rpa/` |
 | 2b | Data Mart (Star Schema) | Concluído | **Concluído** | 5 dimensões, 5 fatos, KPIs D1–D9 (sem alteração). | `script/03_bi_views/datamart_estrela.sql` |
 | 2c | CTEs | Concluído | **Concluído** | `kpi_d6`, `kpi_d9`, `vw_kpi_cards` e a nova `kpi_d1_evolucao_mensal`. | idem |
