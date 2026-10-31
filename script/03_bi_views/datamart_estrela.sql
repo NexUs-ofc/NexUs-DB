@@ -14,20 +14,15 @@
 DROP SCHEMA IF EXISTS bi CASCADE;
 CREATE SCHEMA bi;
 
--- Histórico de consumo/descarte (item_consumed / item_expired). Preenchido pelo
--- dataload BI; criado aqui também para o script rodar mesmo antes da carga.
+-- Histórico de consumo/descarte real e simulado, com o contrato operacional da V11.
 CREATE SCHEMA IF NOT EXISTS bi_hist;
 CREATE TABLE IF NOT EXISTS bi_hist.registro_estoque (
     id                 SERIAL PRIMARY KEY,
-    profile_id         INTEGER NOT NULL REFERENCES profile(id) ON DELETE CASCADE,
-    food_id            INTEGER NOT NULL REFERENCES food(id),
-    event_type         VARCHAR(30) NOT NULL CHECK (event_type IN ('item_consumed', 'item_expired')),
-    event_date         TIMESTAMP NOT NULL,
-    purchase_date      TIMESTAMP NOT NULL,
-    expiry_date        DATE,
-    consumed_quantity  INTEGER NOT NULL DEFAULT 0 CHECK (consumed_quantity >= 0),
-    discarded_quantity INTEGER NOT NULL DEFAULT 0 CHECK (discarded_quantity >= 0),
-    estimated_loss     DECIMAL(10,2) NOT NULL DEFAULT 0
+    pantry_item_id     INTEGER NOT NULL REFERENCES pantry_item(id) ON DELETE RESTRICT,
+    event_type         VARCHAR(30) NOT NULL CHECK (event_type IN ('CONSUMED', 'DISCARDED')),
+    quantity           INTEGER NOT NULL CHECK (quantity > 0),
+    event_date         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    estimated_loss     DECIMAL(10,2)
 );
 
 -- ---------------------------------------------------------------- DIMENSÕES
@@ -38,8 +33,7 @@ SELECT TO_CHAR(d, 'YYYYMMDD')::int AS sk_data, d::date AS data,
        EXTRACT(ISODOW FROM d) IN (6, 7) AS fim_de_semana
 FROM generate_series(
         LEAST((SELECT MIN(created_at)::date FROM profile), (SELECT MIN(billing_period_start) FROM payment), (now() AT TIME ZONE 'America/Sao_Paulo')::date),
-        GREATEST((SELECT MAX(expiry_date) FROM pantry_item), (SELECT MAX(expiry_date) FROM bi_hist.registro_estoque),
-                 (now() AT TIME ZONE 'America/Sao_Paulo')::date + 365),
+        GREATEST((SELECT MAX(expiry_date) FROM pantry_item), (now() AT TIME ZONE 'America/Sao_Paulo')::date + 365),
         INTERVAL '1 day') AS d
 UNION ALL SELECT -1, NULL, NULL, NULL, 'N/I', NULL, NULL, NULL;
 
@@ -94,21 +88,25 @@ SELECT i.id AS id_item, i.food_id AS sk_alimento, i.profile_id AS sk_perfil,
             WHEN i.expiry_date <= (now() AT TIME ZONE 'America/Sao_Paulo')::date + 7 THEN 'VENCE_7D'
             WHEN i.expiry_date <= (now() AT TIME ZONE 'America/Sao_Paulo')::date + 30 THEN 'VENCE_30D'
             ELSE 'OK' END AS status_validade
-FROM pantry_item i JOIN profile p ON p.id = i.profile_id;
+FROM pantry_item i JOIN profile p ON p.id = i.profile_id
+WHERE i.quantity > 0;
 
 CREATE VIEW bi.fato_movimento AS          -- grão: 1 item consumido ou descartado (histórico)
-SELECT r.id AS id_movimento, r.food_id AS sk_alimento, r.profile_id AS sk_perfil,
+SELECT r.id AS id_movimento, i.food_id AS sk_alimento, i.profile_id AS sk_perfil,
        COALESCE(p.address_id, -1) AS sk_localidade,
        TO_CHAR(r.event_date, 'YYYYMMDD')::int AS sk_data_evento,
-       TO_CHAR(r.purchase_date, 'YYYYMMDD')::int AS sk_data_compra,
-       COALESCE(TO_CHAR(r.expiry_date, 'YYYYMMDD')::int, -1) AS sk_data_validade,
+       TO_CHAR(i.created_at, 'YYYYMMDD')::int AS sk_data_compra,
+       COALESCE(TO_CHAR(i.expiry_date, 'YYYYMMDD')::int, -1) AS sk_data_validade,
        r.event_type AS tipo_evento,
-       (r.event_type = 'item_expired')::int AS expirado,
-       (r.event_type = 'item_consumed')::int AS consumido,
-       r.consumed_quantity AS qtd_consumida, r.discarded_quantity AS qtd_descartada,
+       (r.event_type = 'DISCARDED')::int AS expirado,
+       (r.event_type = 'CONSUMED')::int AS consumido,
+       CASE WHEN r.event_type = 'CONSUMED' THEN r.quantity ELSE 0 END AS qtd_consumida,
+       CASE WHEN r.event_type = 'DISCARDED' THEN r.quantity ELSE 0 END AS qtd_descartada,
        r.estimated_loss AS perda_estimada,
-       r.event_date::date - r.purchase_date::date AS dias_em_casa
-FROM bi_hist.registro_estoque r JOIN profile p ON p.id = r.profile_id;
+       r.event_date::date - i.created_at::date AS dias_em_casa
+FROM bi_hist.registro_estoque r
+JOIN pantry_item i ON i.id = r.pantry_item_id
+JOIN profile p ON p.id = i.profile_id;
 
 CREATE VIEW bi.fato_estoque_minimo AS     -- grão: household × alimento monitorado
 -- Estoque = lotes não vencidos (mesma regra de fn_get_items_below_minimum, V8): vencido não repõe a casa.

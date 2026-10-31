@@ -9,7 +9,7 @@ suficiente para os KPIs de desperdício D1..D9 do star schema.
 - 520 perfis (households, empresas e lojas) espalhados por 60 cidades das 27 UFs.
 - Cada item comprado é consumido, vence e é descartado, ou continua na despensa hoje.
   O histórico de consumo/descarte vai para bi_hist.registro_estoque, com os mesmos
-  event_type do app (item_consumed / item_expired).
+  event_type do app (CONSUMED / DISCARDED), ligado a lotes preservados com saldo zero.
 - pantry_item, pantry_product_setting e o histórico ficam com tudo o que a simulação gera
   (~3 mil lotes, ~2 mil mínimos, ~9,6 mil eventos): com só 520 eventos o D1 mensal oscilava
   de 0% a 50%. LIMITE_AMOSTRA = 520 volta à amostra aleatória antiga.
@@ -332,6 +332,7 @@ class SimulacaoBI:
         self._minimos(casas)  # depois da amostra: mínimo coerente com o estoque que ficou
         self._reduzir("pantry_product_setting")
         self._reduzir_hist()
+        self._vincular_historico()
         return self
 
     def _reduzir(self, tabela: str):
@@ -342,6 +343,23 @@ class SimulacaoBI:
     def _reduzir_hist(self):
         if LIMITE_AMOSTRA and len(self.hist) > LIMITE_AMOSTRA:
             self.hist = sorted(self.rng.sample(self.hist, LIMITE_AMOSTRA), key=lambda r: r["event_date"])
+
+    def _vincular_historico(self):
+        itens = self.pg["pantry_item"]
+        ids = iter(self.alocar("pantry_item", len(itens) + len(self.hist)))
+        for item in itens:
+            item["id"] = next(ids)
+        historico = []
+        for registro in self.hist:
+            item_id = next(ids)
+            itens.append({"id": item_id, "food_id": registro["food_id"], "profile_id": registro["profile_id"],
+                          "quantity": 0, "expiry_date": registro["expiry_date"],
+                          "created_at": registro["purchase_date"]})
+            consumido = registro["event_type"] == "item_consumed"
+            historico.append({"pantry_item_id": item_id, "event_type": "CONSUMED" if consumido else "DISCARDED",
+                              "quantity": registro["consumed_quantity"] if consumido else registro["discarded_quantity"],
+                              "event_date": registro["event_date"], "estimated_loss": registro["estimated_loss"]})
+        self.hist = historico
 
     # ---------------------------------------------------------------- empresas
     def _empresas(self):
@@ -484,21 +502,20 @@ HIST_DDL = """
 CREATE SCHEMA IF NOT EXISTS bi_hist;
 CREATE TABLE IF NOT EXISTS bi_hist.registro_estoque (
     id                 SERIAL PRIMARY KEY,
-    profile_id         INTEGER NOT NULL REFERENCES profile(id) ON DELETE CASCADE,
-    food_id            INTEGER NOT NULL REFERENCES food(id),
-    event_type         VARCHAR(30) NOT NULL CHECK (event_type IN ('item_consumed', 'item_expired')),
-    event_date         TIMESTAMP NOT NULL,
-    purchase_date      TIMESTAMP NOT NULL,
-    expiry_date        DATE,
-    consumed_quantity  INTEGER NOT NULL DEFAULT 0 CHECK (consumed_quantity >= 0),
-    discarded_quantity INTEGER NOT NULL DEFAULT 0 CHECK (discarded_quantity >= 0),
-    estimated_loss     DECIMAL(10,2) NOT NULL DEFAULT 0
+    pantry_item_id     INTEGER NOT NULL REFERENCES pantry_item(id) ON DELETE RESTRICT,
+    event_type         VARCHAR(30) NOT NULL CHECK (event_type IN ('CONSUMED', 'DISCARDED')),
+    quantity           INTEGER NOT NULL CHECK (quantity > 0),
+    event_date         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    estimated_loss     DECIMAL(10,2)
 );
-CREATE INDEX IF NOT EXISTS ix_registro_estoque_profile ON bi_hist.registro_estoque (profile_id);
-CREATE INDEX IF NOT EXISTS ix_registro_estoque_data ON bi_hist.registro_estoque (event_date);
+CREATE INDEX IF NOT EXISTS ix_registro_estoque_item_data
+    ON bi_hist.registro_estoque (pantry_item_id, event_date, id);
 """
 
 LIMPEZA_SQL = """
+DELETE FROM bi_hist.registro_estoque r
+USING pantry_item i, profile p
+WHERE r.pantry_item_id = i.id AND i.profile_id = p.id AND p.email LIKE %(m)s;
 DELETE FROM payment WHERE company_id IN
     (SELECT c.id FROM company c JOIN profile p ON p.id = c.profile_id WHERE p.email LIKE %(m)s);
 DELETE FROM store   WHERE profile_id IN (SELECT id FROM profile WHERE email LIKE %(m)s);
@@ -543,7 +560,8 @@ def executar(pg):
         cur.execute("DELETE FROM food f WHERE f.gtin LIKE %s AND NOT (f.gtin = ANY(%s)) "
                     "AND NOT EXISTS (SELECT 1 FROM pantry_item i WHERE i.food_id = f.id) "
                     "AND NOT EXISTS (SELECT 1 FROM pantry_product_setting s WHERE s.food_id = f.id) "
-                    "AND NOT EXISTS (SELECT 1 FROM bi_hist.registro_estoque r WHERE r.food_id = f.id)",
+                    "AND NOT EXISTS (SELECT 1 FROM bi_hist.registro_estoque r "
+                    "JOIN pantry_item i ON i.id = r.pantry_item_id WHERE i.food_id = f.id)",
                     (GTIN_PREFIXO + "%", [s["gtin"] for s in catalogo]))
         cur.execute("SELECT gtin, id FROM food WHERE gtin LIKE %s", (GTIN_PREFIXO + "%",))
         gtin_id = dict(cur.fetchall())
