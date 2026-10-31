@@ -10,8 +10,10 @@ suficiente para os KPIs de desperdício D1..D9 do star schema.
 - Cada item comprado é consumido, vence e é descartado, ou continua na despensa hoje.
   O histórico de consumo/descarte vai para bi_hist.registro_estoque, com os mesmos
   event_type do app (item_consumed / item_expired).
-- A simulação gera mais eventos do que o ALVO; pantry_item, pantry_product_setting e o
-  histórico são reduzidos por amostra aleatória, o que preserva as proporções dos KPIs.
+- pantry_item, pantry_product_setting e o histórico ficam com tudo o que a simulação gera
+  (~3 mil lotes, ~2 mil mínimos, ~9,6 mil eventos): com só 520 eventos o D1 mensal oscilava
+  de 0% a 50%. LIMITE_AMOSTRA = 520 volta à amostra aleatória antiga.
+- A carga liga nexus.carga_em_lote: itens simulados não contam como acesso no DAU.
 
 Não apaga dados do app. Cada execução remove só os próprios dados da execução anterior
 (perfis com e-mail @bi.nexus.local, em cascata) e insere de novo. IDs vêm das sequences
@@ -31,6 +33,9 @@ from .seed import CATEGORIES, PLANS
 DOMINIO = "@bi.nexus.local"
 JANELA = 365
 ALVO = 520  # registros por tabela gerada (pantry_item, settings, histórico, perfis/endereços)
+# Amostra de pantry_item, pantry_product_setting e histórico. None = mantém tudo o que a simulação
+# gera (KPIs mensais estáveis no BI); um número (ex.: ALVO) volta à amostra aleatória.
+LIMITE_AMOSTRA = None
 # perfis = endereços = 520. Cada empresa e cada loja também é um perfil, por isso não dá para
 # ter 500 empresas e 500 lojas sem passar de 1.000 perfis.
 VOL = {"household": 380, "company": 55, "store": 85}
@@ -330,13 +335,13 @@ class SimulacaoBI:
         return self
 
     def _reduzir(self, tabela: str):
-        """Amostra aleatória até o ALVO (mantém as proporções dos KPIs)."""
-        if len(self.pg[tabela]) > ALVO:
-            self.pg[tabela] = self.rng.sample(self.pg[tabela], ALVO)
+        """Amostra aleatória até LIMITE_AMOSTRA (mantém as proporções dos KPIs); None = sem corte."""
+        if LIMITE_AMOSTRA and len(self.pg[tabela]) > LIMITE_AMOSTRA:
+            self.pg[tabela] = self.rng.sample(self.pg[tabela], LIMITE_AMOSTRA)
 
     def _reduzir_hist(self):
-        if len(self.hist) > ALVO:
-            self.hist = sorted(self.rng.sample(self.hist, ALVO), key=lambda r: r["event_date"])
+        if LIMITE_AMOSTRA and len(self.hist) > LIMITE_AMOSTRA:
+            self.hist = sorted(self.rng.sample(self.hist, LIMITE_AMOSTRA), key=lambda r: r["event_date"])
 
     # ---------------------------------------------------------------- empresas
     def _empresas(self):
@@ -514,6 +519,8 @@ DELETE FROM food f WHERE f.product_brand = 'NexUs BI' AND f.gtin LIKE '29%%'
 def executar(pg):
     ref = date.fromisoformat(os.getenv("BI_DATA_REF") or datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%Y-%m-%d"))
     with pg.conn.cursor() as cur:
+        # DAU (script_dau.sql): itens simulados não são acesso real; vale só nesta transação
+        cur.execute("SET LOCAL nexus.carga_em_lote = 'on'")
         cur.execute(HIST_DDL)
         cur.execute(LIMPEZA_SQL, {"m": "%" + DOMINIO})
 

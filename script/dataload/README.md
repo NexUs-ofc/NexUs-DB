@@ -158,7 +158,7 @@ O Notify calcula o estado de leitura a partir de `read_at`, sem persistir `is_re
 ## Perfil BI
 
 Acrescenta ~12 meses de uso simulado **no mesmo banco do app**, **somente no PostgreSQL**
-(não grava nada no MongoDB), com ~500 registros verossímeis por tabela e variação
+(não grava nada no MongoDB), com pelo menos 500 registros verossímeis por tabela e variação
 suficiente para os KPIs de desperdício D1–D9 do star schema.
 
 ```
@@ -181,15 +181,21 @@ Depois rode `script/03_bi_views/datamart_estrela.sql` no pgAdmin para recriar as
 | `profile_phone` | ~560 | celular com DDD da UF + fixo para parte dos perfis |
 | `auth_method` | ~545 | Google/senha; alguns vinculam os dois |
 | `payment` | ~565 | mensalidades desde o cadastro; bons e maus pagadores |
-| `pantry_item` | 520 | o que está hoje na despensa (inclui vencidos esquecidos e itens sem validade) |
-| `pantry_product_setting` | 520 | mínimos configurados para o que a casa tem; parte fica abaixo |
-| `bi_hist.registro_estoque` | 520 | itens consumidos ou descartados nos últimos 12 meses |
+| `pantry_item` | ~3.000 | o que está hoje na despensa (inclui vencidos esquecidos e itens sem validade) |
+| `pantry_product_setting` | ~2.250 | mínimos configurados para o que a casa tem; parte fica abaixo |
+| `bi_hist.registro_estoque` | ~9.600 | itens consumidos ou descartados nos últimos 12 meses |
 | `company` / `store` | 55 / 85 | cada uma também é um profile, então dividem os 520 com os households |
 | `category` / `plan` | 17 / 3 | tabelas de domínio fixas |
 
-A simulação gera mais eventos e reduz `pantry_item`, `pantry_product_setting` e o histórico
-por amostra aleatória até `ALVO` (520), o que preserva as proporções dos KPIs.
-Para mudar o volume, altere `ALVO` e `VOL` em `src/bi.py`.
+`pantry_item`, `pantry_product_setting` e o histórico ficam com tudo o que a simulação gera
+(`LIMITE_AMOSTRA = None`): com a antiga amostra de 520 eventos o D1 mensal oscilava de 0% a 50%;
+com ~9,6 mil fica entre 8% e 14%. `LIMITE_AMOSTRA = 520` volta à amostra aleatória.
+Para mudar o volume de perfis e catálogo, altere `ALVO` e `VOL` em `src/bi.py`.
+
+A carga roda com `SET LOCAL nexus.carga_em_lote = 'on'`: os itens simulados não entram no DAU
+(`script/04_monitoramento/script_dau.sql`), que fica só com o uso real do app.
+Cada reexecução apaga e recria os perfis e pagamentos simulados, o que gera ~2,2 mil registros
+de auditoria (`auditoria.log_profile` / `log_payment`).
 
 Variação simulada:
 - Desperdício por categoria (`DESPERDICIO`: FLV e padaria vencem mais; enlatados e grãos quase nunca),
