@@ -33,3 +33,15 @@ SELECT * FROM bi.kpi_d5_ranking_vencimento_uf ORDER BY ranking;
 ```
 
 `dim_perfil.origem` separa dados do app (`APP`) dos simulados pelo dataload BI (`SIMULADO_BI`), para filtrar no dashboard.
+
+Regras de cálculo:
+
+- "Hoje" é a data de Brasília (`now() AT TIME ZONE 'America/Sao_Paulo'`), não a do servidor: o Neon roda em GMT
+  e, sem isso, os KPIs de validade (D3, D4, D5) virariam o dia às 21h.
+- D4 conta de hoje até hoje + 7 (inclusive) e não inclui vencidos; D5 soma vencidos + a vencer em até 30 dias.
+- D6 segue `fn_get_items_below_minimum` (V8): lote vencido não conta como estoque.
+- D3, D4, D5 e D8 contam lotes (linhas de `pantry_item`), não unidades.
+- D9 pode passar de 1: é a média de itens descartados por household no período do histórico.
+
+O script pode rodar de novo: o `DROP SCHEMA bi CASCADE` refaz as views e, no fim, as permissões de leitura
+do usuário `databricks_bi` (Lakehouse Federation do Databricks), se ele existir.

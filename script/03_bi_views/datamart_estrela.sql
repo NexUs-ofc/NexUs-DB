@@ -8,6 +8,8 @@
 -- Estrela: fatos apontam direto para as dimensões; dimensões não se ligam entre si.
 -- Chave -1 = "não informado". Nenhuma view expõe nome, e-mail, telefone ou rua.
 -- Só mexe nos schemas bi e bi_hist (somente leitura sobre as tabelas do app).
+-- "Hoje" = data de Brasília ((now() AT TIME ZONE 'America/Sao_Paulo')::date), não a do servidor
+-- (o Neon roda em GMT e viraria o dia às 21h). Pode rodar de novo: refaz as views e as permissões.
 -- =============================================================================
 DROP SCHEMA IF EXISTS bi CASCADE;
 CREATE SCHEMA bi;
@@ -35,9 +37,9 @@ SELECT TO_CHAR(d, 'YYYYMMDD')::int AS sk_data, d::date AS data,
        EXTRACT(QUARTER FROM d)::int AS trimestre, EXTRACT(ISODOW FROM d)::int AS dia_semana,
        EXTRACT(ISODOW FROM d) IN (6, 7) AS fim_de_semana
 FROM generate_series(
-        LEAST((SELECT MIN(created_at)::date FROM profile), (SELECT MIN(billing_period_start) FROM payment), CURRENT_DATE),
+        LEAST((SELECT MIN(created_at)::date FROM profile), (SELECT MIN(billing_period_start) FROM payment), (now() AT TIME ZONE 'America/Sao_Paulo')::date),
         GREATEST((SELECT MAX(expiry_date) FROM pantry_item), (SELECT MAX(expiry_date) FROM bi_hist.registro_estoque),
-                 CURRENT_DATE + 365),
+                 (now() AT TIME ZONE 'America/Sao_Paulo')::date + 365),
         INTERVAL '1 day') AS d
 UNION ALL SELECT -1, NULL, NULL, NULL, 'N/I', NULL, NULL, NULL;
 
@@ -66,8 +68,8 @@ CREATE VIEW bi.dim_perfil AS
 SELECT p.id AS sk_perfil, p.type::text AS tipo, p.status::text AS status,
        (SELECT provider::text FROM auth_method a WHERE a.profile_id = p.id ORDER BY a.created_at, a.id LIMIT 1) AS login,
        TO_CHAR(p.created_at, 'YYYY-MM') AS ano_mes_cadastro,
-       CASE WHEN CURRENT_DATE - p.created_at::date < 90 THEN '0-3 meses'
-            WHEN CURRENT_DATE - p.created_at::date < 180 THEN '3-6 meses'
+       CASE WHEN (now() AT TIME ZONE 'America/Sao_Paulo')::date - p.created_at::date < 90 THEN '0-3 meses'
+            WHEN (now() AT TIME ZONE 'America/Sao_Paulo')::date - p.created_at::date < 180 THEN '3-6 meses'
             ELSE '6+ meses' END AS tempo_de_casa,
        CASE WHEN p.email LIKE '%@bi.nexus.local' THEN 'SIMULADO_BI' ELSE 'APP' END AS origem
 FROM profile p;
@@ -85,12 +87,12 @@ SELECT i.id AS id_item, i.food_id AS sk_alimento, i.profile_id AS sk_perfil,
        COALESCE(TO_CHAR(i.expiry_date, 'YYYYMMDD')::int, -1) AS sk_data_validade,
        i.quantity AS quantidade,
        (i.expiry_date IS NOT NULL)::int AS tem_validade,
-       i.expiry_date - CURRENT_DATE AS dias_ate_vencer,
+       i.expiry_date - (now() AT TIME ZONE 'America/Sao_Paulo')::date AS dias_ate_vencer,
        i.expiry_date - i.created_at::date AS vida_util_dias,                         -- D7
        CASE WHEN i.expiry_date IS NULL THEN 'SEM_VALIDADE'
-            WHEN i.expiry_date < CURRENT_DATE THEN 'VENCIDO'
-            WHEN i.expiry_date <= CURRENT_DATE + 7 THEN 'VENCE_7D'
-            WHEN i.expiry_date <= CURRENT_DATE + 30 THEN 'VENCE_30D'
+            WHEN i.expiry_date < (now() AT TIME ZONE 'America/Sao_Paulo')::date THEN 'VENCIDO'
+            WHEN i.expiry_date <= (now() AT TIME ZONE 'America/Sao_Paulo')::date + 7 THEN 'VENCE_7D'
+            WHEN i.expiry_date <= (now() AT TIME ZONE 'America/Sao_Paulo')::date + 30 THEN 'VENCE_30D'
             ELSE 'OK' END AS status_validade
 FROM pantry_item i JOIN profile p ON p.id = i.profile_id;
 
@@ -109,12 +111,15 @@ SELECT r.id AS id_movimento, r.food_id AS sk_alimento, r.profile_id AS sk_perfil
 FROM bi_hist.registro_estoque r JOIN profile p ON p.id = r.profile_id;
 
 CREATE VIEW bi.fato_estoque_minimo AS     -- grão: household × alimento monitorado
+-- Estoque = lotes não vencidos (mesma regra de fn_get_items_below_minimum, V8): vencido não repõe a casa.
 SELECT s.profile_id AS sk_perfil, s.food_id AS sk_alimento, COALESCE(p.address_id, -1) AS sk_localidade,
        COALESCE(e.qtd, 0) AS estoque, s.minimum_quantity AS minimo,
        (COALESCE(e.qtd, 0) < s.minimum_quantity)::int AS abaixo_minimo
 FROM pantry_product_setting s
 JOIN profile p ON p.id = s.profile_id
-LEFT JOIN (SELECT profile_id, food_id, SUM(quantity) AS qtd FROM pantry_item GROUP BY 1, 2) e
+LEFT JOIN (SELECT profile_id, food_id, SUM(quantity) AS qtd FROM pantry_item
+           WHERE expiry_date IS NULL OR expiry_date >= (now() AT TIME ZONE 'America/Sao_Paulo')::date
+           GROUP BY 1, 2) e
        ON e.profile_id = s.profile_id AND e.food_id = s.food_id
 WHERE s.minimum_quantity > 0;
 
@@ -288,3 +293,14 @@ FROM (VALUES
     ('store', (SELECT COUNT(*) FROM store)),
     ('bi_hist.registro_estoque', (SELECT COUNT(*) FROM bi_hist.registro_estoque))
 ) AS v (tabela, registros);
+
+-- ------------------------------------------------------------ PERMISSÕES
+-- Usuário somente leitura do Databricks (Lakehouse Federation). O DROP SCHEMA ... CASCADE do
+-- início apaga as permissões, então elas são refeitas aqui (só se o usuário existir).
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'databricks_bi') THEN
+        GRANT USAGE ON SCHEMA bi TO databricks_bi;
+        GRANT SELECT ON ALL TABLES IN SCHEMA bi TO databricks_bi;
+    END IF;
+END $$;
