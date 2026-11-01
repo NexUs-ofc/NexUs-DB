@@ -16,7 +16,6 @@ def build_plans() -> list[Plan]:
         Plan(
             plan_name=p["plan_name"],
             plan_price=p["plan_price"],
-            store_limit=p["store_limit"],
             description=p["description"],
             is_active=p["is_active"],
         )

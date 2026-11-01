@@ -69,7 +69,8 @@ SELECT p.id AS sk_perfil, p.type::text AS tipo, p.status::text AS status,
 FROM profile p;
 
 CREATE VIEW bi.dim_empresa AS             -- plano desnormalizado
-SELECT c.id AS sk_empresa, pl.plan_name AS plano, pl.plan_price AS preco_plano, pl.store_limit AS limite_lojas,
+SELECT c.id AS sk_empresa, pl.plan_name AS plano, pl.plan_price AS preco_plano,
+       NULL::INTEGER AS limite_lojas,  -- coluna legada, sem limite por plano desde a V12
        (SELECT COUNT(*) FROM store s WHERE s.company_id = c.id) AS qtd_lojas
 FROM company c JOIN plan pl ON pl.id = c.plan_id;
 

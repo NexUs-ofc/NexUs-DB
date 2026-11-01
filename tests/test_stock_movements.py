@@ -15,7 +15,7 @@ class StockMovementSimulationTest(unittest.TestCase):
             return list(range(start, start + count))
 
         foods = {index: sku for index, sku in enumerate(montar_catalogo(), start=1)}
-        plans = [(1, "Ceris", 19.90, 1), (2, "Enterprise", 49.90, 5), (3, "Exclusive", 99.90, 20)]
+        plans = [(1, "Ceris", 19.90), (2, "Enterprise", 49.90), (3, "Exclusive", 99.90)]
         simulation = SimulacaoBI(date(2026, 10, 25), foods, plans, allocate).gerar()
         items = {item["id"]: item for item in simulation.pg["pantry_item"]}
 

@@ -247,7 +247,7 @@ class SimulacaoBI:
         self.ref = datetime.combine(ref, time(23, 59))
         self.inicio = self.ref - timedelta(days=JANELA)
         self.foods = foods        # food_id -> sku (dict de montar_catalogo)
-        self.planos = planos      # [(id, nome, preco, limite)] ordenados por preço
+        self.planos = planos      # [(id, nome, preco)] ordenados por preço
         self.alocar = alocar      # alocar(tabela, n) -> ids reservados nas sequences
         self.por_categoria = {}
         for fid, sku in foods.items():
@@ -376,13 +376,10 @@ class SimulacaoBI:
                                        "cnpj": "".join(filter(str.isdigit, self.fake.unique.cnpj()))})
             self._mensalidades(emp)
 
-        # toda empresa tem pelo menos 1 loja (matriz); o resto vai para quem tem limite
+        # toda empresa tem pelo menos 1 loja (matriz); distribui as demais sem limite por plano
         donos = list(empresas)
         while len(donos) < VOL["store"]:
-            emp = self.rng.choice(empresas)
-            limite = (emp["upgrade"][1] if emp["upgrade"] else emp["plano"])[3]
-            if donos.count(emp) < limite:
-                donos.append(emp)
+            donos.append(self.rng.choice(empresas))
         ufs, nomes = [], []
         for emp in donos:
             emp["lojas"] += 1
@@ -544,9 +541,9 @@ def executar(pg):
         # categorias, planos e alimentos: reaproveita os existentes, cria só o que falta
         execute_values(cur, "INSERT INTO category (category_name) VALUES %s ON CONFLICT DO NOTHING",
                        [(c,) for c in CATEGORIES])
-        execute_values(cur, "INSERT INTO plan (plan_name, plan_price, store_limit, description) VALUES %s "
+        execute_values(cur, "INSERT INTO plan (plan_name, plan_price, description) VALUES %s "
                             "ON CONFLICT (plan_name) DO NOTHING",
-                       [(p["plan_name"], p["plan_price"], p["store_limit"], p["description"]) for p in PLANS])
+                       [(p["plan_name"], p["plan_price"], p["description"]) for p in PLANS])
         cur.execute("SELECT category_name, id FROM category")
         cat = dict(cur.fetchall())
         catalogo = montar_catalogo()
@@ -566,7 +563,7 @@ def executar(pg):
         cur.execute("SELECT gtin, id FROM food WHERE gtin LIKE %s", (GTIN_PREFIXO + "%",))
         gtin_id = dict(cur.fetchall())
         foods = {gtin_id[s["gtin"]]: s for s in catalogo}
-        cur.execute("SELECT id, plan_name, plan_price::float, store_limit FROM plan WHERE is_active ORDER BY plan_price, id")
+        cur.execute("SELECT id, plan_name, plan_price::float FROM plan WHERE is_active ORDER BY plan_price, id")
         planos = cur.fetchall()
 
         def alocar(tabela, n):

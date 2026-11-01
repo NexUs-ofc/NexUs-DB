@@ -18,7 +18,8 @@ migrations/
 ├── V8__profile_restrictions_store_hours_billing_and_indexes.sql # perfil, horários, cobrança e índices
 ├── V9__food_image_url.sql           # imagem do produto trazida da api
 ├── V10__audit_triggers.sql          # auditoria de profile e payment (herança de tabelas)
-└── V11__record_stock_movements_and_preserve_empty_items.sql # movimentos reais e lotes com saldo zero
+├── V11__record_stock_movements_and_preserve_empty_items.sql # movimentos reais e lotes com saldo zero
+└── V12__drop_plan_store_limit.sql   # remove o limite de lojas dos planos
 ```
 
 O schema é compartilhado entre os serviços do NexUs, então o contrato do
@@ -50,6 +51,14 @@ aplicativo, mas era criada fora das migrations anteriores. O CI reproduz essa se
 
 Novas mudanças de schema devem ser adicionadas com a próxima versão disponível,
 nunca alterando os arquivos já aplicados.
+
+## V12 — planos sem limite de lojas
+
+Remove `public.plan.store_limit` e sua restrição de valor positivo. Quando
+`bi.dim_empresa` existe, atualiza a view antes da remoção e mantém `limite_lojas`
+como `NULL::INTEGER` para preservar as views dependentes e suas permissões.
+Não usa `CASCADE`: outras dependências interrompem a migration. Os valores
+antigos de limite são descartados; os planos e seus demais dados são preservados.
 
 ## V11 — movimentos de estoque
 
