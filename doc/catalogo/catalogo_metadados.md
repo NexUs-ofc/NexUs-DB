@@ -157,7 +157,6 @@ erDiagram
         integer id PK
         numeric plan_price
         varchar plan_name UK
-        integer store_limit
         text description
         boolean is_active
         timestamp created_at
@@ -392,7 +391,6 @@ Regras:
 | `id` | integer | não | nextval('plan_id_seq'::regclass) | PK | INTERNO | Identificador do plano (serial). |
 | `plan_price` | numeric(10,2) | não | — | — | INTERNO | Mensalidade em R$. |
 | `plan_name` | character varying(80) | não | — | UK | INTERNO | Nome comercial do plano, único. |
-| `store_limit` | integer | não | — | — | INTERNO | Máximo de lojas que a empresa pode cadastrar no plano. |
 | `description` | text | sim | — | — | INTERNO | Recursos incluídos no plano. |
 | `is_active` | boolean | não | true | — | INTERNO | Plano disponível para venda. |
 | `created_at` | timestamp without time zone | não | CURRENT_TIMESTAMP | — | INTERNO | Data de criação do registro. |
@@ -401,7 +399,6 @@ Regras:
 Regras:
 
 - **check** `plan_plan_price_check`: `CHECK ((plan_price >= (0)::numeric))`
-- **check** `plan_store_limit_check`: `CHECK ((store_limit > 0))`
 
 #### `profile`
 
@@ -583,7 +580,7 @@ Regras:
 | `sk_empresa` | integer | sim | — | — | INTERNO | Chave da empresa (= company.id). |
 | `plano` | character varying(80) | sim | — | — | INTERNO | Plano atual. |
 | `preco_plano` | numeric(10,2) | sim | — | — | INTERNO | Mensalidade do plano em R$. |
-| `limite_lojas` | integer | sim | — | — | INTERNO | Limite de lojas do plano. |
+| `limite_lojas` | integer | sim | — | — | INTERNO | Coluna legada, sempre NULL desde a V12; planos sem limite de lojas. |
 | `qtd_lojas` | bigint | sim | — | — | INTERNO | Lojas cadastradas. |
 
 #### `bi.dim_localidade`

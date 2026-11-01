@@ -193,7 +193,6 @@ CROSS JOIN (VALUES
     ('id', 1, 'integer', FALSE, 'nextval(''plan_id_seq''::regclass)', 'PK', NULL, 'INTERNO', 'Identificador do plano (serial).'),
     ('plan_price', 2, 'numeric(10,2)', FALSE, NULL, NULL, NULL, 'INTERNO', 'Mensalidade em R$.'),
     ('plan_name', 3, 'character varying(80)', FALSE, NULL, 'UK', NULL, 'INTERNO', 'Nome comercial do plano, único.'),
-    ('store_limit', 4, 'integer', FALSE, NULL, NULL, NULL, 'INTERNO', 'Máximo de lojas que a empresa pode cadastrar no plano.'),
     ('description', 5, 'text', TRUE, NULL, NULL, NULL, 'INTERNO', 'Recursos incluídos no plano.'),
     ('is_active', 6, 'boolean', FALSE, 'true', NULL, NULL, 'INTERNO', 'Plano disponível para venda.'),
     ('created_at', 7, 'timestamp without time zone', FALSE, 'CURRENT_TIMESTAMP', NULL, NULL, 'INTERNO', 'Data de criação do registro.'),
@@ -265,7 +264,7 @@ CROSS JOIN (VALUES
     ('sk_empresa', 1, 'integer', TRUE, NULL, NULL, NULL, 'INTERNO', 'Chave da empresa (= company.id).'),
     ('plano', 2, 'character varying(80)', TRUE, NULL, NULL, NULL, 'INTERNO', 'Plano atual.'),
     ('preco_plano', 3, 'numeric(10,2)', TRUE, NULL, NULL, NULL, 'INTERNO', 'Mensalidade do plano em R$.'),
-    ('limite_lojas', 4, 'integer', TRUE, NULL, NULL, NULL, 'INTERNO', 'Limite de lojas do plano.'),
+    ('limite_lojas', 4, 'integer', TRUE, NULL, NULL, NULL, 'INTERNO', 'Coluna legada, sempre NULL desde a V12; planos sem limite de lojas.'),
     ('qtd_lojas', 5, 'bigint', TRUE, NULL, NULL, NULL, 'INTERNO', 'Lojas cadastradas.')
 ) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
 WHERE o.banco = 'POSTGRESQL' AND o.schema_nome = 'bi' AND o.objeto_nome = 'dim_empresa';

@@ -8,7 +8,6 @@ from .base import BaseEntity
 class Plan(BaseEntity):
   plan_name: str
   plan_price: float
-  store_limit: int
   is_active: bool = True
   description: str | None = None
   updated_at: datetime | None = None
