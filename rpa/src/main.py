@@ -62,19 +62,36 @@ def conectar(prefixo: str):
     return conn
 
 
+def _gravar_resultado(conn, execucao_id, status, etapa, mensagem, resumo):
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE rpa.execucao SET fim = CURRENT_TIMESTAMP, status = %s,
+                      etapa = %s, mensagem = %s, resumo = %s
+                WHERE id = %s""",
+            (status, etapa, mensagem, "\n".join(resumo), execucao_id),
+        )
+    conn.commit()
+
+
 def finalizar(destino, execucao_id, status: str, etapa, mensagem, resumo: list[str]):
-    """Grava o resultado em rpa.execucao (em transação própria, após o rollback)."""
+    """Grava o resultado em rpa.execucao (em transação própria, após o rollback).
+
+    Se a falha derrubou a conexão com o banco novo, abre outra só para registrar o
+    resultado; assim a execução não fica para sempre como EXECUTANDO.
+    """
     if destino is None or execucao_id is None:
         return
     try:
-        with destino.cursor() as cur:
-            cur.execute(
-                """UPDATE rpa.execucao SET fim = CURRENT_TIMESTAMP, status = %s,
-                          etapa = %s, mensagem = %s, resumo = %s
-                    WHERE id = %s""",
-                (status, etapa, mensagem, "\n".join(resumo), execucao_id),
-            )
-        destino.commit()
+        _gravar_resultado(destino, execucao_id, status, etapa, mensagem, resumo)
+        return
+    except psycopg2.Error as erro:
+        log.warning("Conexão com o banco novo indisponível (%s); tentando outra", erro)
+    try:
+        nova = conectar("PG")
+        try:
+            _gravar_resultado(nova, execucao_id, status, etapa, mensagem, resumo)
+        finally:
+            nova.close()
     except psycopg2.Error as erro:
         log.error("Não foi possível registrar o resultado da execução %s: %s", execucao_id, erro)
 
@@ -91,6 +108,9 @@ def main() -> int:
 
         etapa = "preparacao"
         with destino.cursor() as cur:
+            # Carga em lote não é acesso de usuário: desliga o registro de DAU
+            # (trigger trg_dau_pantry_item) para toda a sessão do RPA.
+            cur.execute("SET nexus.carga_em_lote = 'on'")
             cur.execute(CONTROLE)
             cur.execute("INSERT INTO rpa.execucao DEFAULT VALUES RETURNING id")
             execucao_id = cur.fetchone()[0]
