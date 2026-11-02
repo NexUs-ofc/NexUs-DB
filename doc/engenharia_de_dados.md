@@ -26,7 +26,7 @@ Bancos do projeto:
 ## 2. Ordem de execução
 
 ```text
-1. migrations/ (Flyway)            V1 … V10
+1. migrations/ (Flyway)            callback beforeMigrate + V1 … V13
 2. script/dataload                  seed-sql  e  all --perfil bi
 3. script/04_monitoramento/script_dau.sql
 4. script/03_bi_views/datamart_estrela.sql
@@ -55,10 +55,12 @@ FROM auditoria.log_profile WHERE registro_id = 42 ORDER BY alterado_em;
 
 Por que herança: a consulta na pai junta todas as tabelas auditadas, e cada filha pode ter
 índices e retenção próprios. Para auditar outra tabela basta criar `auditoria.log_<tabela>
-() INHERITS (auditoria.log_alteracao)` e o trigger. Cuidados: PK e índices não são herdados
-(cada filha declara os seus) e os logs contêm dados pessoais — o catálogo marca
-`dados_antigos`/`dados_novos` como `SENSIVEL`. O usuário da aplicação precisa de `INSERT`
-nas tabelas e `USAGE` na sequence do schema `auditoria`.
+() INHERITS (auditoria.log_alteracao)`, o trigger de auditoria e o `trg_proteger_log_<tabela>`.
+Cuidados: PK e índices não são herdados (cada filha declara os seus) e os logs contêm dados
+pessoais — o catálogo marca `dados_antigos`/`dados_novos` como `SENSIVEL`, e desde a V13
+`dietary_restrictions` vai só como hash MD5. O usuário da aplicação precisa de `INSERT`
+nas tabelas e `USAGE` na sequence do schema `auditoria`; desde a V13 um INSERT direto
+(fora dos triggers) é recusado e usuário e horário são sempre os reais.
 
 **DAU.** Usuário = `profile.id`; dia = data em `America/Sao_Paulo`. A PK
 `(activity_date, user_id)` impede contar o mesmo usuário duas vezes no dia; repetir o
@@ -66,8 +68,8 @@ registro só mantém o horário mais cedo (`first_seen_at`). Formas de registro:
 
 - `SELECT register_daily_activity(<profile_id>);` — chamada pelo **auth-api a cada login**.
 - Trigger `trg_dau_pantry_item` — o household incluiu ou alterou um item da despensa.
-- Opcional: uma carga em lote pode rodar `SET nexus.carga_em_lote = 'on'` para não contar. O RPA não
-  usa essa opção, então itens novos vindos do legado contam o household como ativo no dia da carga.
+- Cargas em lote rodam `SET nexus.carga_em_lote = 'on'` para não contar: o dataload BI e o RPA
+  usam essa opção, então itens vindos do legado não contam o household como ativo.
 
 ```sql
 SELECT * FROM vw_dau ORDER BY activity_date DESC LIMIT 30;
