@@ -14,26 +14,36 @@
 DROP SCHEMA IF EXISTS bi CASCADE;
 CREATE SCHEMA bi;
 
--- Histórico de consumo/descarte real e simulado, com o contrato operacional da V11.
-CREATE SCHEMA IF NOT EXISTS bi_hist;
-CREATE TABLE IF NOT EXISTS bi_hist.registro_estoque (
-    id                 SERIAL PRIMARY KEY,
-    pantry_item_id     INTEGER NOT NULL REFERENCES pantry_item(id) ON DELETE RESTRICT,
-    event_type         VARCHAR(30) NOT NULL CHECK (event_type IN ('CONSUMED', 'DISCARDED')),
-    quantity           INTEGER NOT NULL CHECK (quantity > 0),
-    event_date         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    estimated_loss     DECIMAL(10,2)
-);
+-- O histórico de consumo/descarte (bi_hist.registro_estoque) é criado pelas migrations
+-- (callback beforeMigrate + V11 + V13). Este script só lê: se a tabela não existe, para aqui.
+DO $$
+BEGIN
+    IF to_regclass('bi_hist.registro_estoque') IS NULL THEN
+        RAISE EXCEPTION 'bi_hist.registro_estoque não existe: aplique as migrations (Flyway) antes do data mart';
+    END IF;
+END $$;
 
 -- ---------------------------------------------------------------- DIMENSÕES
+-- O calendário cobre todas as datas usadas pelas fatos (cadastro, competência, pagamento,
+-- entrada do lote, evento e validade). Antes começava no cadastro mais antigo, e movimentos
+-- de lotes anteriores sumiam em silêncio nos JOINs com dim_tempo.
 CREATE VIEW bi.dim_tempo AS
 SELECT TO_CHAR(d, 'YYYYMMDD')::int AS sk_data, d::date AS data,
        EXTRACT(YEAR FROM d)::int AS ano, EXTRACT(MONTH FROM d)::int AS mes, TO_CHAR(d, 'YYYY-MM') AS ano_mes,
        EXTRACT(QUARTER FROM d)::int AS trimestre, EXTRACT(ISODOW FROM d)::int AS dia_semana,
        EXTRACT(ISODOW FROM d) IN (6, 7) AS fim_de_semana
 FROM generate_series(
-        LEAST((SELECT MIN(created_at)::date FROM profile), (SELECT MIN(billing_period_start) FROM payment), (now() AT TIME ZONE 'America/Sao_Paulo')::date),
-        GREATEST((SELECT MAX(expiry_date) FROM pantry_item), (now() AT TIME ZONE 'America/Sao_Paulo')::date + 365),
+        LEAST((SELECT MIN(created_at)::date FROM profile),
+              (SELECT MIN(billing_period_start) FROM payment),
+              (SELECT MIN(paid_at)::date FROM payment),
+              (SELECT MIN(created_at)::date FROM pantry_item),
+              (SELECT MIN(expiry_date) FROM pantry_item),
+              (SELECT MIN(event_date)::date FROM bi_hist.registro_estoque),
+              (now() AT TIME ZONE 'America/Sao_Paulo')::date),
+        GREATEST((SELECT MAX(expiry_date) FROM pantry_item),
+                 (SELECT MAX(created_at)::date FROM pantry_item),
+                 (SELECT MAX(event_date)::date FROM bi_hist.registro_estoque),
+                 (now() AT TIME ZONE 'America/Sao_Paulo')::date + 365),
         INTERVAL '1 day') AS d
 UNION ALL SELECT -1, NULL, NULL, NULL, 'N/I', NULL, NULL, NULL;
 
@@ -92,7 +102,7 @@ SELECT i.id AS id_item, i.food_id AS sk_alimento, i.profile_id AS sk_perfil,
 FROM pantry_item i JOIN profile p ON p.id = i.profile_id
 WHERE i.quantity > 0;
 
-CREATE VIEW bi.fato_movimento AS          -- grão: 1 item consumido ou descartado (histórico)
+CREATE VIEW bi.fato_movimento AS          -- grão: 1 movimento de consumo ou descarte (com a quantidade de embalagens)
 SELECT r.id AS id_movimento, i.food_id AS sk_alimento, i.profile_id AS sk_perfil,
        COALESCE(p.address_id, -1) AS sk_localidade,
        TO_CHAR(r.event_date, 'YYYYMMDD')::int AS sk_data_evento,
@@ -136,11 +146,13 @@ SELECT id AS sk_perfil, COALESCE(address_id, -1) AS sk_localidade,
 FROM profile;
 
 -- ----------------------------------------------------- KPIs DE DESPERDÍCIO (detalhe)
--- D1 — Taxa de desperdício = item_expired / (item_expired + item_consumed), por mês e região
+-- D1 — Taxa de desperdício = unidades descartadas / (descartadas + consumidas), por mês e região.
+-- Conta embalagens (quantity), não operações: descartar 5 embalagens pesa 5, não 1.
 CREATE VIEW bi.kpi_d1_desperdicio_mensal AS
 SELECT t.ano_mes, l.regiao,
-       SUM(m.expirado) AS itens_expirados, SUM(m.consumido) AS itens_consumidos,
-       ROUND(100.0 * SUM(m.expirado) / NULLIF(COUNT(*), 0), 2) AS taxa_desperdicio_pct,
+       SUM(m.qtd_descartada) AS unidades_descartadas, SUM(m.qtd_consumida) AS unidades_consumidas,
+       COUNT(*) AS movimentos,
+       ROUND(100.0 * SUM(m.qtd_descartada) / NULLIF(SUM(m.qtd_descartada + m.qtd_consumida), 0), 2) AS taxa_desperdicio_pct,
        SUM(m.perda_estimada) AS perda_estimada_rs
 FROM bi.fato_movimento m
 JOIN bi.dim_tempo t ON t.sk_data = m.sk_data_evento
@@ -151,21 +163,36 @@ GROUP BY GROUPING SETS ((t.ano_mes, l.regiao), (t.ano_mes), (l.regiao), ());
 CREATE VIEW bi.kpi_d1_evolucao_mensal AS
 WITH mensal AS (                                -- 1) agrega os movimentos por mês
     SELECT t.ano_mes,
-           SUM(m.expirado) AS itens_expirados,
-           COUNT(*) AS itens_movimentados,
+           SUM(m.qtd_descartada) AS unidades_descartadas,
+           SUM(m.qtd_descartada + m.qtd_consumida) AS unidades_movimentadas,
            SUM(m.perda_estimada) AS perda_rs
     FROM bi.fato_movimento m
     JOIN bi.dim_tempo t ON t.sk_data = m.sk_data_evento
     GROUP BY t.ano_mes
-), indicadores AS (                             -- 2) taxa do mês
-    SELECT *, ROUND(100.0 * itens_expirados / NULLIF(itens_movimentados, 0), 2) AS taxa_desperdicio_pct
-    FROM mensal
+), meses AS (                                   -- 2) todos os meses do período, inclusive sem movimento
+    SELECT TO_CHAR(g, 'YYYY-MM') AS ano_mes
+    FROM generate_series(
+            ((SELECT MIN(ano_mes) FROM mensal) || '-01')::timestamp,
+            ((SELECT MAX(ano_mes) FROM mensal) || '-01')::timestamp,
+            INTERVAL '1 month') AS g
+), indicadores AS (                             -- 3) taxa do mês (NULL em mês sem movimento)
+    SELECT ms.ano_mes,
+           COALESCE(m.unidades_descartadas, 0) AS unidades_descartadas,
+           COALESCE(m.unidades_movimentadas, 0) AS unidades_movimentadas,
+           m.perda_rs,
+           ROUND(100.0 * m.unidades_descartadas / NULLIF(m.unidades_movimentadas, 0), 2) AS taxa_desperdicio_pct
+    FROM meses ms
+    LEFT JOIN mensal m ON m.ano_mes = ms.ano_mes
 )
-SELECT ano_mes, itens_expirados, itens_movimentados, taxa_desperdicio_pct, perda_rs,
+-- LAG e a média móvel andam pelo calendário: o mês anterior é o mês anterior de fato.
+-- perda_rs é NULL quando nenhum movimento do mês tem perda estimada; NULLS LAST impede
+-- que esses meses apareçam como "pior mês" no ranking.
+SELECT ano_mes, unidades_descartadas, unidades_movimentadas, taxa_desperdicio_pct, perda_rs,
        SUM(perda_rs) OVER (ORDER BY ano_mes ROWS UNBOUNDED PRECEDING) AS perda_acumulada_rs,      -- running total
        taxa_desperdicio_pct - LAG(taxa_desperdicio_pct) OVER (ORDER BY ano_mes) AS variacao_pp,    -- vs mês anterior
        ROUND(AVG(taxa_desperdicio_pct) OVER (ORDER BY ano_mes ROWS 2 PRECEDING), 2) AS media_movel_3m,
-       RANK() OVER (ORDER BY perda_rs DESC) AS ranking_perda
+       CASE WHEN perda_rs IS NOT NULL
+            THEN RANK() OVER (ORDER BY perda_rs DESC NULLS LAST) END AS ranking_perda
 FROM indicadores;
 
 -- D3, D4, D8 — situação da validade dos itens hoje na despensa, por UF
@@ -213,24 +240,25 @@ FROM bi.fato_estoque e JOIN bi.dim_alimento a ON a.sk_alimento = e.sk_alimento
 WHERE e.tem_validade = 1
 GROUP BY ROLLUP (a.categoria);
 
--- D9 — Índice de desperdício por categoria = expirados da categoria / households com a categoria
+-- D9 — Índice de desperdício por categoria = unidades descartadas da categoria / households com a categoria
 CREATE VIEW bi.kpi_d9_desperdicio_categoria AS
 WITH uso AS (                                   -- household teve a categoria (histórico ou despensa)
-    SELECT sk_perfil, sk_alimento, expirado FROM bi.fato_movimento
+    SELECT sk_perfil, sk_alimento, qtd_descartada FROM bi.fato_movimento
     UNION ALL SELECT sk_perfil, sk_alimento, 0 FROM bi.fato_estoque
 )
 SELECT a.categoria,
-       SUM(u.expirado) AS itens_expirados,
+       SUM(u.qtd_descartada) AS unidades_descartadas,
        COUNT(DISTINCT u.sk_perfil) AS households_com_categoria,
-       ROUND(SUM(u.expirado)::numeric / NULLIF(COUNT(DISTINCT u.sk_perfil), 0), 3) AS d9_indice_desperdicio,
-       DENSE_RANK() OVER (ORDER BY SUM(u.expirado)::numeric / NULLIF(COUNT(DISTINCT u.sk_perfil), 0) DESC) AS ranking
+       ROUND(SUM(u.qtd_descartada)::numeric / NULLIF(COUNT(DISTINCT u.sk_perfil), 0), 3) AS d9_indice_desperdicio,
+       DENSE_RANK() OVER (ORDER BY SUM(u.qtd_descartada)::numeric / NULLIF(COUNT(DISTINCT u.sk_perfil), 0) DESC) AS ranking
 FROM uso u JOIN bi.dim_alimento a ON a.sk_alimento = u.sk_alimento
 GROUP BY a.categoria;
 
 -- --------------------------------------------------------------------- CARDS
 CREATE VIEW bi.vw_kpi_cards AS
 WITH k (ordem, codigo, kpi, valor, unidade, meta, menor_melhor) AS (
-    SELECT 1, 'D1', 'Taxa de desperdício', 100.0 * AVG(expirado), '%', 15, TRUE FROM bi.fato_movimento
+    SELECT 1, 'D1', 'Taxa de desperdício', 100.0 * SUM(qtd_descartada) / NULLIF(SUM(qtd_descartada + qtd_consumida), 0), '%', 15, TRUE
+      FROM bi.fato_movimento
     UNION ALL
     SELECT 3, 'D3', '% itens vencidos na despensa', 100.0 * AVG((status_validade = 'VENCIDO')::int), '%', 5, TRUE
       FROM bi.fato_estoque WHERE tem_validade = 1
@@ -249,7 +277,7 @@ WITH k (ordem, codigo, kpi, valor, unidade, meta, menor_melhor) AS (
     UNION ALL
     SELECT 8, 'D8', '% itens sem validade', 100.0 * AVG(1 - tem_validade), '%', 10, TRUE FROM bi.fato_estoque
     UNION ALL
-    SELECT 9, 'D9', 'Maior índice de desperdício por categoria', MAX(d9_indice_desperdicio), 'itens/household', NULL, TRUE
+    SELECT 9, 'D9', 'Maior índice de desperdício por categoria', MAX(d9_indice_desperdicio), 'unidades/household', NULL, TRUE
       FROM bi.kpi_d9_desperdicio_categoria
     UNION ALL
     SELECT 20, 'F1', '% inadimplência', 100.0 * AVG((status = 'OVERDUE')::int), '%', 8, TRUE
