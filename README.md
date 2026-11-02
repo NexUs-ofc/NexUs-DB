@@ -172,3 +172,7 @@ Mapeamento, tratamento de falhas e configuração em [rpa/README.md](rpa/README.
 
 Matriz de requisitos, auditoria (triggers com herança), DAU, EXPLAIN ANALYZE, backup e
 recuperação e como tudo foi validado: [doc/engenharia_de_dados.md](doc/engenharia_de_dados.md).
+
+## Containers e Kubernetes
+
+Consulte o [guia de containers e Kubernetes](docs/containers.md) para build, configuração e execução em qualquer cluster.
