@@ -6,7 +6,7 @@ rode os scripts de [script/05_catalogo/](../../script/05_catalogo/) na ordem `01
 
 | # | Seção | Conteúdo |
 |---|---|---|
-| 1 | [PostgreSQL — schema `public`](#1-postgresql-schema-public) | 12 tabelas transacionais, 5 enums, regras de negócio e diagrama ER |
+| 1 | [PostgreSQL — schema `public`](#1-postgresql-schema-public) | 13 tabelas transacionais, 5 enums, regras de negócio e diagrama ER |
 | 2 | [Data mart — schemas `bi` e `bi_hist`](#2-data-mart-schemas-bi-e-bi_hist) | Dimensões, fatos e KPIs de desperdício (star schema) |
 | 3 | [MongoDB](#3-mongodb) | 9 collections: receitas, eventos, notificações, IA e telemetria |
 
@@ -63,6 +63,7 @@ No banco: tabela `catalogo.nivel_acesso`, exposta em `catalogo.vw_dicionario_dad
 | Objeto | Tipo | Colunas | Descrição |
 |---|---|---|---|
 | [`address`](#address) | tabela | 9 | Endereços de households, empresas e lojas. Usado na análise regional (cidade, UF, região). |
+| [`billing_block`](#billing_block) | tabela | 3 | Perfis (empresa e lojas) bloqueados por inadimplência pelo sp_update_overdue_payments (V13). Bloqueio manual não entra aqui. |
 | [`auth_method`](#auth_method) | tabela | 5 | Formas de login do perfil: no máximo uma por provedor. |
 | [`daily_active_users`](#daily_active_users) | tabela | 3 | Monitoramento (DAU): 1 linha por usuário (profile) ativo por dia. Criada por `script/04_monitoramento/script_dau.sql`, fora do Flyway. |
 | [`vw_dau`](#vw_dau) | view | 2 | Monitoramento: quantidade de usuários ativos (DAU) por dia. |
@@ -177,6 +178,11 @@ erDiagram
         integer profile_id FK,PK
         varchar phone PK
     }
+    billing_block {
+        integer profile_id PK,FK
+        integer company_id FK
+        timestamp blocked_at
+    }
     store {
         integer id PK
         char cnpj UK
@@ -198,6 +204,8 @@ erDiagram
     address |o--o{ profile : "address_id"
     profile ||--o{ profile_phone : "profile_id"
     profile ||--o{ daily_active_users : "user_id"
+    profile ||--o| billing_block : "profile_id"
+    company ||--o{ billing_block : "company_id"
     company ||--o{ store : "company_id"
     profile ||--o| store : "profile_id"
 ```
@@ -251,6 +259,21 @@ Regras:
 |---|---|---|---|---|---|---|
 | `id` | integer | não | nextval('category_id_seq'::regclass) | PK | INTERNO | Identificador da categoria (serial). |
 | `category_name` | character varying(100) | não | — | UK | INTERNO | Nome da categoria, único. Ex.: Laticínios e Ovos. |
+
+#### `billing_block`
+
+*tabela* — Perfis (empresa e lojas) bloqueados por inadimplência pelo `sp_update_overdue_payments` (V13). Bloqueio manual não entra aqui, por isso o job nunca o desfaz.
+
+| Coluna | Tipo | Nulo | Padrão | Chave | LGPD | Descrição |
+|---|---|---|---|---|---|---|
+| `profile_id` | integer | não | — | PK, FK → `profile.id` | INTERNO | Perfil (empresa ou loja) bloqueado por inadimplência. |
+| `company_id` | integer | não | — | FK → `company.id` | INTERNO | Empresa cuja inadimplência causou o bloqueio. |
+| `blocked_at` | timestamp without time zone | não | CURRENT_TIMESTAMP | — | INTERNO | Quando o job bloqueou o perfil. |
+
+Regras:
+
+- **FK** `billing_block_profile_id_fkey` e `billing_block_company_id_fkey`: ON DELETE CASCADE
+- Inserido quando o job bloqueia; removido quando a empresa não tem mais OVERDUE e o perfil volta a ACTIVE.
 
 #### `company`
 
@@ -473,11 +496,12 @@ Regras:
 | Função | Descrição | Usada por |
 |---|---|---|
 | `register_daily_activity(user_id, [momento])` | Registra o acesso/login do usuário no DAU do dia (fuso America/Sao_Paulo), sem duplicar; mantém o horário do 1º acesso. Retorna TRUE no 1º acesso do dia. Chamada pelo auth-api após autenticar e pelo trigger `trg_dau_pantry_item`. | `daily_active_users`, `pantry_item` |
-| `auditoria.fn_registrar_alteracao()` | Trigger de auditoria (V10): grava OLD, NEW, TG_OP e CURRENT_USER em `auditoria.log_<tabela>`. | `profile` (trg_audit_profile), `payment` (trg_audit_payment) |
+| `auditoria.fn_registrar_alteracao()` | Trigger de auditoria (V10): grava OLD, NEW, TG_OP e CURRENT_USER em `auditoria.log_<tabela>`, com `dietary_restrictions` mascarado por hash (V13). |
+| `auditoria.fn_proteger_log()` | Trigger (V13): recusa INSERT direto nos logs e grava usuário e horário reais. | `log_alteracao`, `log_profile`, `log_payment` | `profile` (trg_audit_profile), `payment` (trg_audit_payment) |
 | `fn_get_expiring_products(início, fim)` | Itens de perfis ACTIVE que vencem na janela (V8). | `pantry_item` |
-| `fn_get_items_below_minimum([profile_id])` | Alimentos abaixo do mínimo configurado (V8). | `pantry_product_setting` |
+| `fn_get_items_below_minimum([profile_id])` | Alimentos abaixo do mínimo configurado (V8); recusa profile_id <= 0 (V13). | `pantry_product_setting` |
 | `sp_generate_monthly_payments(...)` | Procedure: gera a cobrança mensal das empresas sem duplicar competência (V8). | `payment` |
-| `sp_update_overdue_payments(...)` | Procedure: marca cobranças vencidas e bloqueia/reativa empresa e lojas (V8). | `payment`, `profile` |
+| `sp_update_overdue_payments(...)` | Procedure: marca cobranças vencidas, bloqueia empresa e lojas e registra em `billing_block`; reativa só os perfis bloqueados por ela (V8, V13). | `payment`, `profile`, `billing_block` |
 | `prevent_profile_type_change()` | Trigger: impede alterar profile.type depois do cadastro. | `profile` (trg_profile_type_lock) |
 | `validate_profile_reference_type()` | Trigger: garante que profile_id aponte para um perfil do tipo passado como argumento (HOUSEHOLD, COMPANY ou STORE). | `company` (trg_company_profile_type), `pantry_item` (trg_pantry_household_type), `pantry_product_setting` (trg_pantry_product_setting_household_type), `store` (trg_store_profile_type) |
 
@@ -493,12 +517,12 @@ Consultar a pai retorna os logs de todas as filhas.
 | `tabela` | character varying(63) | não | — | — | INTERNO | Tabela alterada (TG_TABLE_NAME). |
 | `operacao` | character varying(6) | não | — | — | INTERNO | INSERT, UPDATE ou DELETE (TG_OP). |
 | `registro_id` | integer | sim | — | — | INTERNO | id do registro alterado. |
-| `dados_antigos` | jsonb | sim | — | — | SENSIVEL | Linha antes da alteração (OLD); nulo no INSERT. |
-| `dados_novos` | jsonb | sim | — | — | SENSIVEL | Linha depois da alteração (NEW); nulo no DELETE. |
+| `dados_antigos` | jsonb | sim | — | — | SENSIVEL | Linha antes da alteração (OLD); nulo no INSERT. `dietary_restrictions` só como hash MD5. |
+| `dados_novos` | jsonb | sim | — | — | SENSIVEL | Linha depois da alteração (NEW); nulo no DELETE. `dietary_restrictions` só como hash MD5. |
 | `usuario` | character varying(63) | não | — | — | INTERNO | Usuário do banco que alterou (CURRENT_USER). |
 | `alterado_em` | timestamp with time zone | não | clock_timestamp() | — | INTERNO | Momento exato da alteração. |
 
-Regras: somente inserção pelos triggers; cada filha tem a própria PK em `id`.
+Regras: somente inserção pelos triggers (V13: `trg_proteger_log_*` recusa INSERT direto e sobrescreve usuário e horário); sem UPDATE/DELETE para os serviços; cada filha tem a própria PK em `id`.
 
 ---
 
@@ -515,19 +539,19 @@ Modelo em estrela: os fatos apontam para as dimensões pelas colunas `sk_*`; cha
 | [`bi.dim_empresa`](#bidim_empresa) | dimensão | 5 | Dimensão empresa com o plano desnormalizado. |
 | [`bi.dim_localidade`](#bidim_localidade) | dimensão | 7 | Dimensão localidade (address) sem rua, número nem CEP. sk_localidade = -1 é "não informado". |
 | [`bi.dim_perfil`](#bidim_perfil) | dimensão | 7 | Dimensão perfil sem nome, e-mail ou telefone. |
-| [`bi.dim_tempo`](#bidim_tempo) | dimensão | 8 | Dimensão calendário (1 linha por dia) do primeiro cadastro até 1 ano à frente. sk_data = -1 é "não informado". |
+| [`bi.dim_tempo`](#bidim_tempo) | dimensão | 8 | Dimensão calendário (1 linha por dia) da data mais antiga usada pelas fatos até 1 ano à frente. sk_data = -1 é "não informado". |
 | [`bi.fato_cadastro`](#bifato_cadastro) | fato | 4 | Fato cadastro. Grão: 1 perfil. |
 | [`bi.fato_estoque`](#bifato_estoque) | fato | 11 | Fato estoque. Grão: 1 item hoje na despensa. |
 | [`bi.fato_estoque_minimo`](#bifato_estoque_minimo) | fato | 6 | Fato estoque mínimo. Grão: household x alimento com mínimo > 0. |
-| [`bi.fato_movimento`](#bifato_movimento) | fato | 14 | Fato movimento. Grão: 1 item consumido ou descartado (bi_hist.registro_estoque). |
+| [`bi.fato_movimento`](#bifato_movimento) | fato | 14 | Fato movimento. Grão: 1 movimento de consumo ou descarte, com a quantidade (bi_hist.registro_estoque). |
 | [`bi.fato_pagamento`](#bifato_pagamento) | fato | 8 | Fato pagamento. Grão: 1 cobrança mensal. |
-| [`bi.kpi_d1_desperdicio_mensal`](#bikpi_d1_desperdicio_mensal) | KPI | 6 | D1: taxa de desperdício = expirados / (expirados + consumidos), por mês e região. |
-| [`bi.kpi_d1_evolucao_mensal`](#bikpi_d1_evolucao_mensal) | KPI | 9 | D1 por mês com running total da perda, variação (LAG), média móvel e ranking. |
+| [`bi.kpi_d1_desperdicio_mensal`](#bikpi_d1_desperdicio_mensal) | KPI | 7 | D1: taxa de desperdício = unidades descartadas / (descartadas + consumidas), por mês e região. |
+| [`bi.kpi_d1_evolucao_mensal`](#bikpi_d1_evolucao_mensal) | KPI | 9 | D1 por mês do calendário com running total da perda, variação (LAG), média móvel e ranking. |
 | [`bi.kpi_d3_d4_d8_validade_uf`](#bikpi_d3_d4_d8_validade_uf) | KPI | 10 | D3 (% vencidos), D4 (% a vencer em 7 dias) e D8 (% sem validade) dos itens na despensa, por UF. |
 | [`bi.kpi_d5_ranking_vencimento_uf`](#bikpi_d5_ranking_vencimento_uf) | KPI | 6 | D5: ranking de UFs por itens vencidos ou a vencer em 30 dias. |
 | [`bi.kpi_d6_estoque_minimo_uf`](#bikpi_d6_estoque_minimo_uf) | KPI | 5 | D6: % de households com algum alimento abaixo do mínimo, por UF. |
 | [`bi.kpi_d7_vida_util_categoria`](#bikpi_d7_vida_util_categoria) | KPI | 6 | D7: vida útil no cadastro (validade - entrada), por categoria. |
-| [`bi.kpi_d9_desperdicio_categoria`](#bikpi_d9_desperdicio_categoria) | KPI | 5 | D9: itens expirados da categoria / households que têm a categoria. |
+| [`bi.kpi_d9_desperdicio_categoria`](#bikpi_d9_desperdicio_categoria) | KPI | 5 | D9: unidades descartadas da categoria / households que têm a categoria. |
 | [`bi.vw_kpi_cards`](#bivw_kpi_cards) | painel | 7 | Cards do dashboard: valor, meta, desvio e situação de D1-D9, financeiro (F1, F2) e base ativa (U1). |
 | [`bi.vw_volume_tabelas`](#bivw_volume_tabelas) | painel | 3 | Teste de volume: registros por tabela e se atinge 500. |
 
@@ -550,10 +574,10 @@ Regras:
 
 - **check** `registro_estoque_quantity_check`: `CHECK (quantity > 0)`
 - **check** `registro_estoque_event_type_check`: somente CONSUMED ou DISCARDED.
-- **FK** `registro_estoque_pantry_item_id_fkey`: ON DELETE RESTRICT.
+- **FK** `registro_estoque_pantry_item_id_fkey`: ON DELETE CASCADE (V13): o histórico sai junto com o lote e a exclusão do perfil funciona.
 - O saldo do lote pode chegar a zero; o lote e seus movimentos são preservados.
 - Correções de saldo e remoções manuais não são tratadas automaticamente como consumo ou descarte.
-- A migration V11 vincula registros antigos a lotes encerrados e adapta somente as views dependentes. As fórmulas dos KPIs ainda contam movimentos, não unidades.
+- Criada pelas migrations: o callback `beforeMigrate` cria a tabela vazia em banco novo e a V11 a converte. A V11 vincula registros antigos a lotes encerrados. D1 e D9 contam unidades.
 
 ### Dimensões
 
@@ -710,32 +734,33 @@ Regras:
 
 #### `bi.kpi_d1_desperdicio_mensal`
 
-*view* — D1: taxa de desperdício = expirados / (expirados + consumidos), por mês e região.
+*view* — D1: taxa de desperdício = unidades descartadas / (descartadas + consumidas), por mês e região.
 
 | Coluna | Tipo | Nulo | Padrão | Chave | LGPD | Descrição |
 |---|---|---|---|---|---|---|
 | `ano_mes` | text | sim | — | — | INTERNO | Mês do evento (nulo = todos). |
 | `regiao` | text | sim | — | — | INTERNO | Região (nulo = todas). |
-| `itens_expirados` | bigint | sim | — | — | INTERNO | Itens descartados vencidos. |
-| `itens_consumidos` | bigint | sim | — | — | INTERNO | Itens consumidos. |
-| `taxa_desperdicio_pct` | numeric | sim | — | — | INTERNO | D1 em %. |
+| `unidades_descartadas` | bigint | sim | — | — | INTERNO | Embalagens descartadas. |
+| `unidades_consumidas` | bigint | sim | — | — | INTERNO | Embalagens consumidas. |
+| `movimentos` | bigint | sim | — | — | INTERNO | Quantidade de operações de consumo ou descarte. |
+| `taxa_desperdicio_pct` | numeric | sim | — | — | INTERNO | D1 em % (por unidades). |
 | `perda_estimada_rs` | numeric | sim | — | — | INTERNO | Perda estimada em R$. |
 
 #### `bi.kpi_d1_evolucao_mensal`
 
-*view* — D1 por mês com window functions: running total (`SUM() OVER`), `LAG`, média móvel de 3 meses e `RANK`.
+*view* — D1 por mês do calendário (meses sem movimento incluídos) com window functions: running total (`SUM() OVER`), `LAG`, média móvel de 3 meses e `RANK` (`NULLS LAST`).
 
 | Coluna | Tipo | Nulo | Padrão | Chave | LGPD | Descrição |
 |---|---|---|---|---|---|---|
 | `ano_mes` | text | sim | — | — | INTERNO | Mês do evento (AAAA-MM). |
-| `itens_expirados` | bigint | sim | — | — | INTERNO | Itens descartados vencidos no mês. |
-| `itens_movimentados` | bigint | sim | — | — | INTERNO | Itens consumidos + descartados no mês. |
-| `taxa_desperdicio_pct` | numeric | sim | — | — | INTERNO | D1 do mês, em %. |
+| `unidades_descartadas` | bigint | sim | — | — | INTERNO | Embalagens descartadas no mês (0 em mês sem movimento). |
+| `unidades_movimentadas` | bigint | sim | — | — | INTERNO | Embalagens consumidas + descartadas no mês. |
+| `taxa_desperdicio_pct` | numeric | sim | — | — | INTERNO | D1 do mês, em % (nulo em mês sem movimento). |
 | `perda_rs` | numeric | sim | — | — | INTERNO | Perda estimada do mês em R$. |
 | `perda_acumulada_rs` | numeric | sim | — | — | INTERNO | Running total da perda. |
 | `variacao_pp` | numeric | sim | — | — | INTERNO | Variação da taxa vs mês anterior (pontos percentuais). |
 | `media_movel_3m` | numeric | sim | — | — | INTERNO | Média móvel da taxa nos últimos 3 meses. |
-| `ranking_perda` | bigint | sim | — | — | INTERNO | Posição do mês pela perda (1 = maior). |
+| `ranking_perda` | bigint | sim | — | — | INTERNO | Posição do mês pela perda (1 = maior); nulo em mês sem perda estimada. |
 
 #### `bi.kpi_d3_d4_d8_validade_uf`
 
@@ -794,14 +819,14 @@ Regras:
 
 #### `bi.kpi_d9_desperdicio_categoria`
 
-*view* — D9: itens expirados da categoria / households que têm a categoria.
+*view* — D9: unidades descartadas da categoria / households que têm a categoria.
 
 | Coluna | Tipo | Nulo | Padrão | Chave | LGPD | Descrição |
 |---|---|---|---|---|---|---|
 | `categoria` | character varying(100) | sim | — | — | INTERNO | Categoria. |
-| `itens_expirados` | bigint | sim | — | — | INTERNO | Itens expirados da categoria. |
+| `unidades_descartadas` | bigint | sim | — | — | INTERNO | Embalagens descartadas da categoria. |
 | `households_com_categoria` | bigint | sim | — | — | INTERNO | Households que compraram a categoria. |
-| `d9_indice_desperdicio` | numeric | sim | — | — | INTERNO | D9: itens expirados por household. |
+| `d9_indice_desperdicio` | numeric | sim | — | — | INTERNO | D9: unidades descartadas por household. |
 | `ranking` | bigint | sim | — | — | INTERNO | DENSE_RANK pelo índice (1 = pior). |
 
 ### Painel

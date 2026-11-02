@@ -1,6 +1,6 @@
 -- =============================================================================
 -- NexUs — Catálogo de metadados (2/3): tabelas e views do PostgreSQL
--- Migrations V1-V11, monitoramento (DAU) e schemas bi e bi_hist.
+-- Migrations V1-V13, monitoramento (DAU) e schemas bi, bi_hist e auditoria.
 -- Pode rodar de novo quando quiser: apaga e recarrega só os metadados do PostgreSQL.
 -- Requer 01_estrutura.sql já executado.
 -- =============================================================================
@@ -11,6 +11,7 @@ DELETE FROM catalogo.objeto WHERE banco = 'POSTGRESQL';  -- as colunas saem em c
 -- ------------------------------------------------------------------ objetos
 INSERT INTO catalogo.objeto (banco, schema_nome, objeto_nome, tipo_objeto, descricao) VALUES
     ('POSTGRESQL', 'public', 'address', 'TABELA', 'Endereços de households, empresas e lojas. Usado na análise regional (cidade, UF, região).'),
+    ('POSTGRESQL', 'public', 'billing_block', 'TABELA', 'Perfis (empresa e lojas) bloqueados por inadimplência pelo sp_update_overdue_payments (V13). Bloqueio manual não entra aqui.'),
     ('POSTGRESQL', 'public', 'auth_method', 'TABELA', 'Formas de login do perfil: no máximo uma por provedor.'),
     ('POSTGRESQL', 'public', 'daily_active_users', 'TABELA', 'Monitoramento (DAU): 1 linha por usuário (profile) ativo por dia. Alimentada por register_daily_activity(); criada por script/04_monitoramento/script_dau.sql, fora do Flyway.'),
     ('POSTGRESQL', 'public', 'vw_dau', 'VIEW', 'Monitoramento: quantidade de usuários ativos (DAU) por dia.'),
@@ -34,16 +35,16 @@ INSERT INTO catalogo.objeto (banco, schema_nome, objeto_nome, tipo_objeto, descr
     ('POSTGRESQL', 'bi', 'fato_estoque_minimo', 'VIEW', 'Fato estoque mínimo. Grão: household x alimento com mínimo > 0.'),
     ('POSTGRESQL', 'bi', 'fato_movimento', 'VIEW', 'Fato movimento. Grão: 1 item consumido ou descartado (bi_hist.registro_estoque).'),
     ('POSTGRESQL', 'bi', 'fato_pagamento', 'VIEW', 'Fato pagamento. Grão: 1 cobrança mensal.'),
-    ('POSTGRESQL', 'bi', 'kpi_d1_desperdicio_mensal', 'VIEW', 'D1: taxa de desperdício = expirados / (expirados + consumidos), por mês e região.'),
+    ('POSTGRESQL', 'bi', 'kpi_d1_desperdicio_mensal', 'VIEW', 'D1: taxa de desperdício = unidades descartadas / (descartadas + consumidas), por mês e região.'),
     ('POSTGRESQL', 'bi', 'kpi_d3_d4_d8_validade_uf', 'VIEW', 'D3 (% vencidos), D4 (% a vencer em 7 dias) e D8 (% sem validade) dos itens na despensa, por UF.'),
     ('POSTGRESQL', 'bi', 'kpi_d5_ranking_vencimento_uf', 'VIEW', 'D5: ranking de UFs por itens vencidos ou a vencer em 30 dias.'),
     ('POSTGRESQL', 'bi', 'kpi_d6_estoque_minimo_uf', 'VIEW', 'D6: % de households com algum alimento abaixo do mínimo, por UF.'),
     ('POSTGRESQL', 'bi', 'kpi_d7_vida_util_categoria', 'VIEW', 'D7: vida útil no cadastro (validade - entrada), por categoria.'),
-    ('POSTGRESQL', 'bi', 'kpi_d9_desperdicio_categoria', 'VIEW', 'D9: itens expirados da categoria / households que têm a categoria.'),
+    ('POSTGRESQL', 'bi', 'kpi_d9_desperdicio_categoria', 'VIEW', 'D9: unidades descartadas da categoria / households que têm a categoria.'),
     ('POSTGRESQL', 'bi', 'vw_kpi_cards', 'VIEW', 'Cards do dashboard: valor, meta, desvio e situação de D1-D9, financeiro (F1, F2) e base ativa (U1).'),
     ('POSTGRESQL', 'bi', 'vw_volume_tabelas', 'VIEW', 'Teste de volume: registros por tabela e se atinge 500.'),
     ('POSTGRESQL', 'bi_hist', 'registro_estoque', 'TABELA', 'Saídas reais do Core e dados simulados identificados pelo perfil. Uma linha por consumo ou descarte, ligada ao lote preservado em pantry_item.'),
-    ('POSTGRESQL', 'bi', 'kpi_d1_evolucao_mensal', 'VIEW', 'D1 por mês com running total da perda, variação mês a mês, média móvel de 3 meses e ranking (window functions).'),
+    ('POSTGRESQL', 'bi', 'kpi_d1_evolucao_mensal', 'VIEW', 'D1 por mês do calendário (inclusive meses sem movimento) com running total da perda, variação mês a mês, média móvel de 3 meses e ranking (window functions).'),
     ('POSTGRESQL', 'auditoria', 'log_alteracao', 'TABELA', 'Tabela pai dos logs de auditoria (herança). Consultá-la retorna os logs de todas as filhas (V10).'),
     ('POSTGRESQL', 'auditoria', 'log_profile', 'TABELA', 'Log de INSERT/UPDATE/DELETE em profile; herda as colunas de log_alteracao (V10).'),
     ('POSTGRESQL', 'auditoria', 'log_payment', 'TABELA', 'Log de INSERT/UPDATE/DELETE em payment; herda as colunas de log_alteracao (V10).');
@@ -227,6 +228,17 @@ CROSS JOIN (VALUES
 ) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
 WHERE o.banco = 'POSTGRESQL' AND o.schema_nome = 'public' AND o.objeto_nome = 'profile_phone';
 
+-- public.billing_block
+INSERT INTO catalogo.coluna (objeto_id, coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
+SELECT o.id, v.coluna_nome, v.posicao, v.tipo_dado, v.aceita_nulo, v.valor_padrao, v.chave, v.referencia, v.classificacao_lgpd, v.descricao
+FROM catalogo.objeto o
+CROSS JOIN (VALUES
+    ('profile_id', 1, 'integer', FALSE, NULL, 'PK, FK', 'profile.id', 'INTERNO', 'Perfil (empresa ou loja) bloqueado por inadimplência (FK profile.id, cascata).'),
+    ('company_id', 2, 'integer', FALSE, NULL, 'FK', 'company.id', 'INTERNO', 'Empresa cuja inadimplência causou o bloqueio (FK company.id, cascata).'),
+    ('blocked_at', 3, 'timestamp without time zone', FALSE, 'CURRENT_TIMESTAMP', NULL, NULL, 'INTERNO', 'Quando o job bloqueou o perfil.')
+) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
+WHERE o.banco = 'POSTGRESQL' AND o.schema_nome = 'public' AND o.objeto_nome = 'billing_block';
+
 -- public.store
 INSERT INTO catalogo.coluna (objeto_id, coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
 SELECT o.id, v.coluna_nome, v.posicao, v.tipo_dado, v.aceita_nulo, v.valor_padrao, v.chave, v.referencia, v.classificacao_lgpd, v.descricao
@@ -405,10 +417,11 @@ FROM catalogo.objeto o
 CROSS JOIN (VALUES
     ('ano_mes', 1, 'text', TRUE, NULL, NULL, NULL, 'INTERNO', 'Mês do evento (nulo = todos).'),
     ('regiao', 2, 'text', TRUE, NULL, NULL, NULL, 'INTERNO', 'Região (nulo = todas).'),
-    ('itens_expirados', 3, 'bigint', TRUE, NULL, NULL, NULL, 'INTERNO', 'Itens descartados vencidos.'),
-    ('itens_consumidos', 4, 'bigint', TRUE, NULL, NULL, NULL, 'INTERNO', 'Itens consumidos.'),
-    ('taxa_desperdicio_pct', 5, 'numeric', TRUE, NULL, NULL, NULL, 'INTERNO', 'D1 em %.'),
-    ('perda_estimada_rs', 6, 'numeric', TRUE, NULL, NULL, NULL, 'INTERNO', 'Perda estimada em R$.')
+    ('unidades_descartadas', 3, 'bigint', TRUE, NULL, NULL, NULL, 'INTERNO', 'Embalagens descartadas.'),
+    ('unidades_consumidas', 4, 'bigint', TRUE, NULL, NULL, NULL, 'INTERNO', 'Embalagens consumidas.'),
+    ('movimentos', 5, 'bigint', TRUE, NULL, NULL, NULL, 'INTERNO', 'Quantidade de operações de consumo ou descarte.'),
+    ('taxa_desperdicio_pct', 6, 'numeric', TRUE, NULL, NULL, NULL, 'INTERNO', 'D1 em % (por unidades).'),
+    ('perda_estimada_rs', 7, 'numeric', TRUE, NULL, NULL, NULL, 'INTERNO', 'Perda estimada em R$.')
 ) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
 WHERE o.banco = 'POSTGRESQL' AND o.schema_nome = 'bi' AND o.objeto_nome = 'kpi_d1_desperdicio_mensal';
 
@@ -477,9 +490,9 @@ SELECT o.id, v.coluna_nome, v.posicao, v.tipo_dado, v.aceita_nulo, v.valor_padra
 FROM catalogo.objeto o
 CROSS JOIN (VALUES
     ('categoria', 1, 'character varying(100)', TRUE, NULL, NULL, NULL, 'INTERNO', 'Categoria.'),
-    ('itens_expirados', 2, 'bigint', TRUE, NULL, NULL, NULL, 'INTERNO', 'Itens expirados da categoria.'),
+    ('unidades_descartadas', 2, 'bigint', TRUE, NULL, NULL, NULL, 'INTERNO', 'Embalagens descartadas da categoria.'),
     ('households_com_categoria', 3, 'bigint', TRUE, NULL, NULL, NULL, 'INTERNO', 'Households que compraram a categoria.'),
-    ('d9_indice_desperdicio', 4, 'numeric', TRUE, NULL, NULL, NULL, 'INTERNO', 'D9: itens expirados por household.'),
+    ('d9_indice_desperdicio', 4, 'numeric', TRUE, NULL, NULL, NULL, 'INTERNO', 'D9: unidades descartadas por household.'),
     ('ranking', 5, 'bigint', TRUE, NULL, NULL, NULL, 'INTERNO', 'DENSE_RANK pelo índice (1 = pior).')
 ) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
 WHERE o.banco = 'POSTGRESQL' AND o.schema_nome = 'bi' AND o.objeto_nome = 'kpi_d9_desperdicio_categoria';
@@ -530,14 +543,14 @@ SELECT o.id, v.coluna_nome, v.posicao, v.tipo_dado, v.aceita_nulo, v.valor_padra
 FROM catalogo.objeto o
 CROSS JOIN (VALUES
     ('ano_mes', 1, 'text', TRUE, NULL, NULL, NULL, 'INTERNO', 'Mês do evento (AAAA-MM).'),
-    ('itens_expirados', 2, 'bigint', TRUE, NULL, NULL, NULL, 'INTERNO', 'Itens descartados vencidos no mês.'),
-    ('itens_movimentados', 3, 'bigint', TRUE, NULL, NULL, NULL, 'INTERNO', 'Itens consumidos + descartados no mês.'),
-    ('taxa_desperdicio_pct', 4, 'numeric', TRUE, NULL, NULL, NULL, 'INTERNO', 'D1 do mês, em %.'),
+    ('unidades_descartadas', 2, 'bigint', TRUE, NULL, NULL, NULL, 'INTERNO', 'Embalagens descartadas no mês (0 em mês sem movimento).'),
+    ('unidades_movimentadas', 3, 'bigint', TRUE, NULL, NULL, NULL, 'INTERNO', 'Embalagens consumidas + descartadas no mês.'),
+    ('taxa_desperdicio_pct', 4, 'numeric', TRUE, NULL, NULL, NULL, 'INTERNO', 'D1 do mês, em % (nulo em mês sem movimento).'),
     ('perda_rs', 5, 'numeric', TRUE, NULL, NULL, NULL, 'INTERNO', 'Perda estimada do mês em R$.'),
     ('perda_acumulada_rs', 6, 'numeric', TRUE, NULL, NULL, NULL, 'INTERNO', 'Running total da perda: SUM() OVER (ORDER BY ano_mes).'),
-    ('variacao_pp', 7, 'numeric', TRUE, NULL, NULL, NULL, 'INTERNO', 'Variação da taxa em pontos percentuais vs mês anterior (LAG).'),
+    ('variacao_pp', 7, 'numeric', TRUE, NULL, NULL, NULL, 'INTERNO', 'Variação da taxa em pontos percentuais vs mês anterior do calendário (LAG).'),
     ('media_movel_3m', 8, 'numeric', TRUE, NULL, NULL, NULL, 'INTERNO', 'Média móvel da taxa nos últimos 3 meses.'),
-    ('ranking_perda', 9, 'bigint', TRUE, NULL, NULL, NULL, 'INTERNO', 'Posição do mês pela perda em R$ (RANK, 1 = maior perda).')
+    ('ranking_perda', 9, 'bigint', TRUE, NULL, NULL, NULL, 'INTERNO', 'Posição do mês pela perda em R$ (RANK, 1 = maior perda); nulo em mês sem perda estimada.')
 ) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
 WHERE o.banco = 'POSTGRESQL' AND o.schema_nome = 'bi' AND o.objeto_nome = 'kpi_d1_evolucao_mensal';
 
@@ -552,8 +565,8 @@ CROSS JOIN (VALUES
     ('tabela', 2, 'character varying(63)', FALSE, NULL, NULL, NULL, 'INTERNO', 'Tabela alterada (TG_TABLE_NAME).'),
     ('operacao', 3, 'character varying(6)', FALSE, NULL, NULL, NULL, 'INTERNO', 'INSERT, UPDATE ou DELETE (TG_OP).'),
     ('registro_id', 4, 'integer', TRUE, NULL, NULL, NULL, 'INTERNO', 'id do registro alterado.'),
-    ('dados_antigos', 5, 'jsonb', TRUE, NULL, NULL, NULL, 'SENSIVEL', 'Linha antes da alteração (OLD); nulo no INSERT. Pode conter dados pessoais e sensíveis.'),
-    ('dados_novos', 6, 'jsonb', TRUE, NULL, NULL, NULL, 'SENSIVEL', 'Linha depois da alteração (NEW); nulo no DELETE. Pode conter dados pessoais e sensíveis.'),
+    ('dados_antigos', 5, 'jsonb', TRUE, NULL, NULL, NULL, 'SENSIVEL', 'Linha antes da alteração (OLD); nulo no INSERT. Contém dados pessoais; dietary_restrictions é gravado só como hash MD5 (V13).'),
+    ('dados_novos', 6, 'jsonb', TRUE, NULL, NULL, NULL, 'SENSIVEL', 'Linha depois da alteração (NEW); nulo no DELETE. Contém dados pessoais; dietary_restrictions é gravado só como hash MD5 (V13).'),
     ('usuario', 7, 'character varying(63)', FALSE, NULL, NULL, NULL, 'INTERNO', 'Usuário do banco que fez a alteração (CURRENT_USER).'),
     ('alterado_em', 8, 'timestamp with time zone', FALSE, 'clock_timestamp()', NULL, NULL, 'INTERNO', 'Momento exato da alteração.')
 ) AS v (coluna_nome, posicao, tipo_dado, aceita_nulo, valor_padrao, chave, referencia, classificacao_lgpd, descricao)
@@ -562,16 +575,20 @@ WHERE o.banco = 'POSTGRESQL' AND o.schema_nome = 'auditoria';
 -- ---------------------------------------------------------- regras de negócio
 UPDATE catalogo.objeto o SET regra_negocio = r.regra
 FROM (VALUES
-    ('public', 'profile', 'Tipo imutável (trg_profile_type_lock). HOUSEHOLD e STORE exigem endereço (V7). Status BLOCKED/ACTIVE de empresas e lojas é controlado por sp_update_overdue_payments. Alterações auditadas em auditoria.log_profile.'),
+    ('public', 'profile', 'Tipo imutável (trg_profile_type_lock). HOUSEHOLD e STORE exigem endereço (V7). Bloqueio por inadimplência feito e desfeito por sp_update_overdue_payments, que só reativa quem está em billing_block; bloqueio manual não é desfeito pelo job. Alterações auditadas em auditoria.log_profile.'),
     ('public', 'payment', 'Uma cobrança por empresa e competência (uq_payment_company_period). Geradas por sp_generate_monthly_payments; PENDING vencida vira OVERDUE em sp_update_overdue_payments. Alterações auditadas em auditoria.log_payment.'),
-    ('public', 'pantry_item', 'Só para perfis HOUSEHOLD (trg_pantry_household_type). Quantidade > 0. Inserir ou alterar registra o household no DAU (trg_dau_pantry_item). Vencimentos: fn_get_expiring_products.'),
+    ('public', 'pantry_item', 'Só para perfis HOUSEHOLD (trg_pantry_household_type). Saldo >= 0 (V11; zero preserva o lote e o histórico). Inserir ou alterar registra o household no DAU (trg_dau_pantry_item). Vencimentos: fn_get_expiring_products.'),
     ('public', 'pantry_product_setting', 'Só para perfis HOUSEHOLD. Um mínimo por household e alimento. Faltas: fn_get_items_below_minimum.'),
     ('public', 'company', 'profile_id deve ser um perfil COMPANY (trg_company_profile_type).'),
     ('public', 'store', 'profile_id deve ser um perfil STORE (trg_store_profile_type). Abertura e fechamento juntos e fechamento > abertura.'),
     ('public', 'auth_method', 'Um método por provedor e perfil; subject do Google único (uq_external_auth_identity).'),
     ('public', 'food', 'GTIN único (V5/V6). Embalagem > 0.'),
     ('public', 'daily_active_users', '1 linha por usuário por dia (PK); repetir o acesso no mesmo dia só mantém o primeiro horário. Cargas em lote com nexus.carga_em_lote = on não contam.'),
-    ('auditoria', 'log_alteracao', 'Somente inserção pelos triggers; não alterar nem apagar logs fora da política de retenção.')
+    ('auditoria', 'log_alteracao', 'Somente inserção pelos triggers: trg_proteger_log_* recusa INSERT direto e grava usuário e horário reais (V13). Sem UPDATE/DELETE para os serviços.'),
+    ('auditoria', 'log_profile', 'Somente inserção pelo trg_audit_profile (V13 protege contra INSERT direto).'),
+    ('auditoria', 'log_payment', 'Somente inserção pelo trg_audit_payment (V13 protege contra INSERT direto).'),
+    ('public', 'billing_block', 'Inserido quando sp_update_overdue_payments bloqueia; removido quando a empresa não tem mais OVERDUE e o perfil volta a ACTIVE.'),
+    ('bi_hist', 'registro_estoque', 'Criada pelas migrations (callback beforeMigrate + V11). Sai junto com o lote (ON DELETE CASCADE, V13).')
 ) AS r (schema_nome, objeto_nome, regra)
 WHERE o.banco = 'POSTGRESQL' AND o.schema_nome = r.schema_nome AND o.objeto_nome = r.objeto_nome;
 
