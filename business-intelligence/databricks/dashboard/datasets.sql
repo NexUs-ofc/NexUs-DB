@@ -50,11 +50,6 @@ SELECT ano_mes, mes_completo, d1_pct, d1_operacoes_pct, d1_media_movel_3m, d1_va
 FROM workspace.gold.kpi_desperdicio_mensal
 ORDER BY ano_mes;
 
--- ============================================================ ds_aprendizado
-SELECT faixa_uso_app, households, unidades_movimentadas, d1_pct, d2_esquecidos_pct, variacao_vs_inicio_pp
-FROM workspace.gold.kpi_aprendizado
-ORDER BY faixa_uso_app;
-
 -- ============================================================ ds_momento_descarte
 SELECT momento_descarte, unidades_descartadas, pct_unidades, dias_apos_vencimento_medio, dias_apos_vencimento_mediana
 FROM workspace.gold.kpi_momento_descarte
@@ -75,11 +70,3 @@ FROM workspace.gold.kpi_categoria
 WHERE categoria <> 'Não informada'
   AND unidades_descartadas > 0       -- categorias do seed sem nenhum descarte poluem o gráfico
 ORDER BY pct_do_desperdicio DESC;
-
--- ============================================================ ds_estado_diario
-SELECT data_referencia, d3_vencidos_pct, d4_vencem_7d_pct, d6_abaixo_minimo_pct, d8_sem_validade_pct
-FROM workspace.gold.kpi_estado_diario
-ORDER BY data_referencia;
-
--- ============================================================ ds_conferencia
-SELECT * FROM workspace.gold.kpi_conferencia;

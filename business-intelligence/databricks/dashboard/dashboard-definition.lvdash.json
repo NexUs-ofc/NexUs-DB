@@ -1,0 +1,2228 @@
+{
+  "datasets": [
+    {
+      "name": "0b097159",
+      "displayName": "ds_cards",
+      "queryLines": [
+        "SELECT ordem, codigo, kpi, valor, unidade, meta, desvio, situacao, valor_por_lote, detalhe,\r\n",
+        "       tipo_indicador, base_dados, data_referencia\r\n",
+        "FROM workspace.gold.kpi_cards\r\n",
+        "ORDER BY ordem;\r\n"
+      ]
+    },
+    {
+      "name": "c1f7e75a",
+      "displayName": "ds_estoque",
+      "queryLines": [
+        "SELECT e.id_item, e.status_validade, e.sem_validade, e.vencido, e.vence_7d, e.em_risco_30d,\r\n",
+        "       e.dias_ate_vencer, e.vida_util_dias,\r\n",
+        "       a.alimento, a.categoria, l.cidade, l.uf, l.regiao, p.tipo AS tipo_perfil, p.origem\r\n",
+        "FROM workspace.gold.fato_estoque e\r\n",
+        "JOIN workspace.gold.dim_alimento   a ON a.sk_alimento   = e.sk_alimento\r\n",
+        "JOIN workspace.gold.dim_localidade l ON l.sk_localidade = e.sk_localidade\r\n",
+        "JOIN workspace.gold.dim_perfil     p ON p.sk_perfil     = e.sk_perfil\r\n",
+        "LATERAL VIEW explode(sequence(1, e.quantidade)) u AS n\r\n",
+        "WHERE e.ultima_foto = 1"
+      ]
+    },
+    {
+      "name": "8cbf5561",
+      "displayName": "ds_movimento",
+      "queryLines": [
+        "SELECT m.id_movimento, m.data_evento, m.ano_mes_evento AS ano_mes, m.tipo_evento,\r\n",
+        "       m.descartado, m.esquecido, m.momento_descarte, m.dias_apos_vencimento,\r\n",
+        "       m.dias_em_casa, m.faixa_uso_app, m.meses_de_uso,\r\n",
+        "       a.alimento, a.categoria, l.uf, l.regiao, p.tipo AS tipo_perfil, p.origem\r\n",
+        "FROM workspace.gold.fato_movimento m\r\n",
+        "JOIN workspace.gold.dim_alimento   a ON a.sk_alimento   = m.sk_alimento\r\n",
+        "JOIN workspace.gold.dim_localidade l ON l.sk_localidade = m.sk_localidade\r\n",
+        "JOIN workspace.gold.dim_perfil     p ON p.sk_perfil     = m.sk_perfil\r\n",
+        "LATERAL VIEW explode(sequence(1, m.unidades)) u AS n"
+      ]
+    },
+    {
+      "name": "77f69555",
+      "displayName": "ds_minimo",
+      "queryLines": [
+        "SELECT c.itens_monitorados, c.itens_abaixo, c.abaixo, l.uf, l.regiao, p.origem\r\n",
+        "FROM workspace.gold.fato_minimo_casa c\r\n",
+        "JOIN workspace.gold.dim_localidade l ON l.sk_localidade = c.sk_localidade\r\n",
+        "JOIN workspace.gold.dim_perfil     p ON p.sk_perfil     = c.sk_perfil\r\n",
+        "WHERE c.ultima_foto = 1 AND c.sk_localidade <> -1;\r\n"
+      ]
+    },
+    {
+      "name": "5aba1e65",
+      "displayName": "ds_mensal",
+      "queryLines": [
+        "SELECT ano_mes, mes_completo, d1_pct, d1_operacoes_pct, d1_media_movel_3m, d1_variacao_pp,\r\n",
+        "       unidades_descartadas, unidades_descartadas_acumuladas, ranking_desperdicio, d2_esquecidos_pct,\r\n",
+        "       meta_d1, situacao_d1\r\n",
+        "FROM workspace.gold.kpi_desperdicio_mensal\r\n",
+        "ORDER BY ano_mes;\r\n",
+        "\r\n"
+      ]
+    },
+    {
+      "name": "5c2dd637",
+      "displayName": "ds_uf",
+      "queryLines": [
+        "SELECT uf, nome_uf, regiao, capital, latitude, longitude, lotes, unidades, unidades_em_risco,\r\n",
+        "       pct_em_risco, d5_ranking_pct, lotes_em_risco, d3_vencidos_pct, d4_vencem_7d_pct,\r\n",
+        "       d8_sem_validade_pct, d6_abaixo_minimo_pct, d1_pct\r\n",
+        "FROM workspace.gold.kpi_uf\r\n",
+        "WHERE lotes > 0;"
+      ]
+    },
+    {
+      "name": "bdee0a4b",
+      "displayName": "ds_categoria",
+      "queryLines": [
+        "SELECT categoria, d9_indice_desperdicio, d9_ranking, unidades_descartadas, pct_do_desperdicio,\r\n",
+        "       pareto_acumulado_pct, d1_pct, d2_esquecidos_pct, d7_vida_util_mediana, d7_vida_util_media,\r\n",
+        "       households_com_categoria\r\n",
+        "   FROM workspace.gold.kpi_categoria\r\n",
+        "   WHERE categoria <> 'Não informada'\r\n",
+        "     AND unidades_descartadas > 0\r\n",
+        "   ORDER BY pct_do_desperdicio DESC"
+      ]
+    },
+    {
+      "name": "d9c48d18",
+      "displayName": "ds_momento_descarte",
+      "queryLines": [
+        "SELECT regexp_replace(momento_descarte, '^[0-9] · ', '') AS momento_descarte,\r\n",
+        "       unidades_descartadas, pct_unidades, dias_apos_vencimento_medio, dias_apos_vencimento_mediana\r\n",
+        "FROM workspace.gold.kpi_momento_descarte\r\n",
+        "ORDER BY pct_unidades DESC"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "4bfe0568",
+      "displayName": "Visão geral",
+      "layout": [
+        {
+          "widget": {
+            "name": "filtro_periodo",
+            "queries": [
+              {
+                "name": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e84c0318caa906240ec153d46f_ano_mes",
+                "query": {
+                  "datasetName": "8cbf5561",
+                  "fields": [
+                    {
+                      "name": "ano_mes",
+                      "expression": "`ano_mes`"
+                    },
+                    {
+                      "name": "ano_mes_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Período"
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "ano_mes",
+                    "queryName": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e84c0318caa906240ec153d46f_ano_mes"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "filtro_regiao",
+            "queries": [
+              {
+                "name": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e84c0318caa906240ec153d46f_regiao",
+                "query": {
+                  "datasetName": "8cbf5561",
+                  "fields": [
+                    {
+                      "name": "regiao",
+                      "expression": "`regiao`"
+                    },
+                    {
+                      "name": "regiao_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e83ec91345817720ccaf6dbb60_regiao",
+                "query": {
+                  "datasetName": "c1f7e75a",
+                  "fields": [
+                    {
+                      "name": "regiao",
+                      "expression": "`regiao`"
+                    },
+                    {
+                      "name": "regiao_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e855d31e0c91bbf1c02ce24448_regiao",
+                "query": {
+                  "datasetName": "77f69555",
+                  "fields": [
+                    {
+                      "name": "regiao",
+                      "expression": "`regiao`"
+                    },
+                    {
+                      "name": "regiao_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Região"
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "regiao",
+                    "queryName": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e84c0318caa906240ec153d46f_regiao"
+                  },
+                  {
+                    "fieldName": "regiao",
+                    "queryName": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e83ec91345817720ccaf6dbb60_regiao"
+                  },
+                  {
+                    "fieldName": "regiao",
+                    "queryName": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e855d31e0c91bbf1c02ce24448_regiao"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 0,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "filtro_uf",
+            "queries": [
+              {
+                "name": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e84c0318caa906240ec153d46f_uf",
+                "query": {
+                  "datasetName": "8cbf5561",
+                  "fields": [
+                    {
+                      "name": "uf",
+                      "expression": "`uf`"
+                    },
+                    {
+                      "name": "uf_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e83ec91345817720ccaf6dbb60_uf",
+                "query": {
+                  "datasetName": "c1f7e75a",
+                  "fields": [
+                    {
+                      "name": "uf",
+                      "expression": "`uf`"
+                    },
+                    {
+                      "name": "uf_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e855d31e0c91bbf1c02ce24448_uf",
+                "query": {
+                  "datasetName": "77f69555",
+                  "fields": [
+                    {
+                      "name": "uf",
+                      "expression": "`uf`"
+                    },
+                    {
+                      "name": "uf_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "UF"
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "uf",
+                    "queryName": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e84c0318caa906240ec153d46f_uf"
+                  },
+                  {
+                    "fieldName": "uf",
+                    "queryName": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e83ec91345817720ccaf6dbb60_uf"
+                  },
+                  {
+                    "fieldName": "uf",
+                    "queryName": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e855d31e0c91bbf1c02ce24448_uf"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 0,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "filtro_categoria",
+            "queries": [
+              {
+                "name": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e84c0318caa906240ec153d46f_categoria",
+                "query": {
+                  "datasetName": "8cbf5561",
+                  "fields": [
+                    {
+                      "name": "categoria",
+                      "expression": "`categoria`"
+                    },
+                    {
+                      "name": "categoria_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e83ec91345817720ccaf6dbb60_categoria",
+                "query": {
+                  "datasetName": "c1f7e75a",
+                  "fields": [
+                    {
+                      "name": "categoria",
+                      "expression": "`categoria`"
+                    },
+                    {
+                      "name": "categoria_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Categoria"
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "categoria",
+                    "queryName": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e84c0318caa906240ec153d46f_categoria"
+                  },
+                  {
+                    "fieldName": "categoria",
+                    "queryName": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e83ec91345817720ccaf6dbb60_categoria"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 0,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "filtro_origem",
+            "queries": [
+              {
+                "name": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e84c0318caa906240ec153d46f_origem",
+                "query": {
+                  "datasetName": "8cbf5561",
+                  "fields": [
+                    {
+                      "name": "origem",
+                      "expression": "`origem`"
+                    },
+                    {
+                      "name": "origem_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e83ec91345817720ccaf6dbb60_origem",
+                "query": {
+                  "datasetName": "c1f7e75a",
+                  "fields": [
+                    {
+                      "name": "origem",
+                      "expression": "`origem`"
+                    },
+                    {
+                      "name": "origem_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e855d31e0c91bbf1c02ce24448_origem",
+                "query": {
+                  "datasetName": "77f69555",
+                  "fields": [
+                    {
+                      "name": "origem",
+                      "expression": "`origem`"
+                    },
+                    {
+                      "name": "origem_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Origem"
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "origem",
+                    "queryName": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e84c0318caa906240ec153d46f_origem"
+                  },
+                  {
+                    "fieldName": "origem",
+                    "queryName": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e83ec91345817720ccaf6dbb60_origem"
+                  },
+                  {
+                    "fieldName": "origem",
+                    "queryName": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e855d31e0c91bbf1c02ce24448_origem"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 10,
+            "y": 0,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "ctr_d1",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "8cbf5561",
+                  "fields": [
+                    {
+                      "name": "avg(descartado)",
+                      "expression": "AVG(`descartado`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "D1 · Taxa de desperdício (unidades)",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(descartado)",
+                  "format": {
+                    "decimalPlaces": {
+                      "places": 2,
+                      "type": "exact"
+                    },
+                    "type": "number-percent"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "ctr_d2",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "8cbf5561",
+                  "fields": [
+                    {
+                      "name": "avg(esquecido)",
+                      "expression": "AVG(`esquecido`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "D2 · Descarte por esquecimento",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(esquecido)",
+                  "format": {
+                    "decimalPlaces": {
+                      "places": 2,
+                      "type": "exact"
+                    },
+                    "type": "number-percent"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 3,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "ctr_d3",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "c1f7e75a",
+                  "fields": [
+                    {
+                      "name": "avg(vencido)",
+                      "expression": "AVG(`vencido`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "D3 · % vencido na despensa",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(vencido)",
+                  "format": {
+                    "decimalPlaces": {
+                      "places": 2,
+                      "type": "exact"
+                    },
+                    "type": "number-percent"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 3,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "ctr_d4",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "c1f7e75a",
+                  "fields": [
+                    {
+                      "name": "avg(vence_7d)",
+                      "expression": "AVG(`vence_7d`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "D4 · % vence em 7 dias",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(vence_7d)",
+                  "format": {
+                    "decimalPlaces": {
+                      "places": 2,
+                      "type": "exact"
+                    },
+                    "type": "number-percent"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 3,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "ctr_d6",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "77f69555",
+                  "fields": [
+                    {
+                      "name": "avg(abaixo)",
+                      "expression": "AVG(`abaixo`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "D6 · Casas abaixo do mínimo",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(abaixo)",
+                  "format": {
+                    "decimalPlaces": {
+                      "places": 2,
+                      "type": "exact"
+                    },
+                    "type": "number-percent"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 3,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "ctr_d8",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "c1f7e75a",
+                  "fields": [
+                    {
+                      "name": "avg(sem_validade)",
+                      "expression": "AVG(`sem_validade`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "D8 · % sem validade",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(sem_validade)",
+                  "format": {
+                    "decimalPlaces": {
+                      "places": 2,
+                      "type": "exact"
+                    },
+                    "type": "number-percent"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 10,
+            "y": 3,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "ctr_d7",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "c1f7e75a",
+                  "fields": [
+                    {
+                      "name": "median(vida_util_dias)",
+                      "expression": "MEDIAN(`vida_util_dias`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "D7 · Vida útil (mediana, dias)"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "median(vida_util_dias)",
+                  "format": {
+                    "abbreviation": "none",
+                    "decimalPlaces": {
+                      "places": 0,
+                      "type": "exact"
+                    },
+                    "type": "number-plain"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 6,
+            "width": 2,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "tabela_metas_desvios",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "0b097159",
+                  "fields": [
+                    {
+                      "name": "codigo",
+                      "expression": "`codigo`"
+                    },
+                    {
+                      "name": "kpi",
+                      "expression": "`kpi`"
+                    },
+                    {
+                      "name": "valor",
+                      "expression": "`valor`"
+                    },
+                    {
+                      "name": "unidade",
+                      "expression": "`unidade`"
+                    },
+                    {
+                      "name": "meta",
+                      "expression": "`meta`"
+                    },
+                    {
+                      "name": "desvio",
+                      "expression": "`desvio`"
+                    },
+                    {
+                      "name": "situacao",
+                      "expression": "`situacao`"
+                    },
+                    {
+                      "name": "valor_por_lote",
+                      "expression": "`valor_por_lote`"
+                    },
+                    {
+                      "name": "detalhe",
+                      "expression": "`detalhe`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Metas e desvios",
+                  "fields": []
+                }
+              },
+              "displayRowNumbers": false,
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "codigo"
+                  },
+                  {
+                    "fieldName": "kpi"
+                  },
+                  {
+                    "fieldName": "valor"
+                  },
+                  {
+                    "fieldName": "unidade"
+                  },
+                  {
+                    "fieldName": "meta"
+                  },
+                  {
+                    "fieldName": "desvio"
+                  },
+                  {
+                    "fieldName": "situacao",
+                    "contentAlignment": "center",
+                    "headerAlignment": "center",
+                    "style": {
+                      "rules": [
+                        {
+                          "backgroundColor": "#E6F4EA",
+                          "condition": {
+                            "operand": {
+                              "type": "data-value",
+                              "value": "DENTRO_DA_META"
+                            },
+                            "operator": "="
+                          },
+                          "foregroundColor": "#137333"
+                        },
+                        {
+                          "backgroundColor": "#FCE8E6",
+                          "condition": {
+                            "operand": {
+                              "type": "data-value",
+                              "value": "FORA_DA_META"
+                            },
+                            "operator": "="
+                          },
+                          "foregroundColor": "#C5221F"
+                        }
+                      ],
+                      "type": "basic"
+                    }
+                  },
+                  {
+                    "fieldName": "valor_por_lote"
+                  },
+                  {
+                    "fieldName": "detalhe"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 6,
+            "width": 10,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "texto_rodape",
+            "multilineTextboxSpec": {
+              "lines": [
+                "Percentuais calculados por unidades (embalagens). valor_por_lote = regra antiga, por registro. Dados de demonstração gerados pela carga de BI; atualizado diariamente às 7h pelo Job_NexUs_BI."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 12,
+            "width": 12,
+            "height": 2
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "020c142d",
+      "displayName": "Desperdicio",
+      "layout": [
+        {
+          "widget": {
+            "name": "periodo",
+            "queries": [
+              {
+                "name": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e84c0318caa906240ec153d46f_ano_mes",
+                "query": {
+                  "datasetName": "8cbf5561",
+                  "fields": [
+                    {
+                      "name": "ano_mes",
+                      "expression": "`ano_mes`"
+                    },
+                    {
+                      "name": "ano_mes_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e860e01f408b7db262a6bc23d7_ano_mes",
+                "query": {
+                  "datasetName": "5aba1e65",
+                  "fields": [
+                    {
+                      "name": "ano_mes",
+                      "expression": "`ano_mes`"
+                    },
+                    {
+                      "name": "ano_mes_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Periodo",
+                  "fields": []
+                }
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "ano_mes",
+                    "queryName": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e84c0318caa906240ec153d46f_ano_mes"
+                  },
+                  {
+                    "fieldName": "ano_mes",
+                    "queryName": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e860e01f408b7db262a6bc23d7_ano_mes"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "regiao",
+            "queries": [
+              {
+                "name": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e84c0318caa906240ec153d46f_regiao",
+                "query": {
+                  "datasetName": "8cbf5561",
+                  "fields": [
+                    {
+                      "name": "regiao",
+                      "expression": "`regiao`"
+                    },
+                    {
+                      "name": "regiao_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Região\n<p>&nbsp;</p>\n",
+                  "fields": []
+                }
+              },
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "regiao",
+                    "queryName": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e84c0318caa906240ec153d46f_regiao"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "categoria1",
+            "queries": [
+              {
+                "name": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e84c0318caa906240ec153d46f_categoria",
+                "query": {
+                  "datasetName": "8cbf5561",
+                  "fields": [
+                    {
+                      "name": "categoria",
+                      "expression": "`categoria`"
+                    },
+                    {
+                      "name": "categoria_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e8732e1820af76349de003cd74_categoria",
+                "query": {
+                  "datasetName": "bdee0a4b",
+                  "fields": [
+                    {
+                      "name": "categoria",
+                      "expression": "`categoria`"
+                    },
+                    {
+                      "name": "categoria_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Categoria",
+                  "fields": []
+                }
+              },
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "categoria",
+                    "queryName": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e84c0318caa906240ec153d46f_categoria"
+                  },
+                  {
+                    "fieldName": "categoria",
+                    "queryName": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e8732e1820af76349de003cd74_categoria"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "origem",
+            "queries": [
+              {
+                "name": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e84c0318caa906240ec153d46f_origem",
+                "query": {
+                  "datasetName": "8cbf5561",
+                  "fields": [
+                    {
+                      "name": "origem",
+                      "expression": "`origem`"
+                    },
+                    {
+                      "name": "origem_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Origem",
+                  "fields": []
+                }
+              },
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "origem",
+                    "queryName": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e84c0318caa906240ec153d46f_origem"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "taxa-de-desperdicio-por-mes",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "5aba1e65",
+                  "fields": [
+                    {
+                      "name": "ano_mes",
+                      "expression": "`ano_mes`"
+                    },
+                    {
+                      "name": "avg(d1_pct)",
+                      "expression": "AVG(`d1_pct`)"
+                    },
+                    {
+                      "name": "avg(d1_media_movel_3m)",
+                      "expression": "AVG(`d1_media_movel_3m`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "showDescription": true,
+                "title": {
+                  "value": "| Taxa de desperdício por mês |  |\n| :--- | :--- |",
+                  "fields": []
+                },
+                "description": {
+                  "value": "| % das unidades que saíram da despensa |\n| :--- |\n<p>&nbsp;</p>\n",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "mark": {
+                "colors": [
+                  "#9329FF",
+                  "#FFFFFF"
+                ]
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "ano_mes",
+                  "axis": {
+                    "hideTitle": false,
+                    "hideLabels": false
+                  },
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "fields": [
+                    {
+                      "fieldName": "avg(d1_pct)",
+                      "displayName": "% das unidades"
+                    },
+                    {
+                      "fieldName": "avg(d1_media_movel_3m)",
+                      "displayName": "media movel 3 meses"
+                    }
+                  ],
+                  "axis": {
+                    "title": "%"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "por-que-vai-para-o-lixo-momento-do-descarte",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d9c48d18",
+                  "fields": [
+                    {
+                      "name": "avg(pct_unidades)",
+                      "expression": "AVG(`pct_unidades`)"
+                    },
+                    {
+                      "name": "momento_descarte",
+                      "expression": "`momento_descarte`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showDescription": true,
+                "showTitle": true,
+                "title": {
+                  "value": "Momento do descarte",
+                  "fields": []
+                },
+                "description": {
+                  "value": "% das unidades descartadas",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "mark": {
+                "colors": [
+                  "#9329FF"
+                ]
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "avg(pct_unidades)",
+                  "axis": {
+                    "title": "%",
+                    "hideTitle": true
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "y": {
+                  "fieldName": "momento_descarte",
+                  "axis": {
+                    "hideTitle": true
+                  },
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 8,
+            "width": 6,
+            "height": 8
+          }
+        },
+        {
+          "widget": {
+            "name": "quanto-tempo-vencer-alimento-descartado",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "8cbf5561",
+                  "fields": [
+                    {
+                      "name": "bin(dias_apos_vencimento, binWidth=7)",
+                      "expression": "BIN_FLOOR(`dias_apos_vencimento`, 7)"
+                    },
+                    {
+                      "name": "count(*)",
+                      "expression": "COUNT(`*`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showDescription": true,
+                "showTitle": true,
+                "title": {
+                  "value": "dias entre vencimento e descarte",
+                  "fields": []
+                },
+                "description": {
+                  "value": "unidades descartadas",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "mark": {
+                "colors": [
+                  "#9329FF"
+                ]
+              },
+              "widgetType": "histogram",
+              "encodings": {
+                "x": {
+                  "fieldName": "bin(dias_apos_vencimento, binWidth=7)",
+                  "axis": {
+                    "title": "dias apos o vencimento"
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "y": {
+                  "fieldName": "count(*)",
+                  "axis": {
+                    "title": "unidades descartadas"
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 8,
+            "width": 6,
+            "height": 8
+          }
+        },
+        {
+          "widget": {
+            "name": "atraso-descarte-categoria-dias-apos-vencer",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "8cbf5561",
+                  "fields": [
+                    {
+                      "name": "categoria",
+                      "expression": "`categoria`"
+                    },
+                    {
+                      "name": "min(dias_apos_vencimento)",
+                      "expression": "MIN(`dias_apos_vencimento`)"
+                    },
+                    {
+                      "name": "q1(dias_apos_vencimento)",
+                      "expression": "PERCENTILE(`dias_apos_vencimento`, 0.25)"
+                    },
+                    {
+                      "name": "median(dias_apos_vencimento)",
+                      "expression": "MEDIAN(`dias_apos_vencimento`)"
+                    },
+                    {
+                      "name": "q3(dias_apos_vencimento)",
+                      "expression": "PERCENTILE(`dias_apos_vencimento`, 0.75)"
+                    },
+                    {
+                      "name": "max(dias_apos_vencimento)",
+                      "expression": "MAX(`dias_apos_vencimento`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "showDescription": true,
+                "title": {
+                  "value": "Atraso no descarte por categoria ",
+                  "fields": []
+                },
+                "description": {
+                  "value": "dias após o vencimento",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "widgetType": "box",
+              "encodings": {
+                "x": {
+                  "fieldName": "categoria",
+                  "axis": {
+                    "hideTitle": true
+                  },
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "whiskerStart": {
+                    "fieldName": "min(dias_apos_vencimento)"
+                  },
+                  "boxStart": {
+                    "fieldName": "q1(dias_apos_vencimento)"
+                  },
+                  "boxMid": {
+                    "fieldName": "median(dias_apos_vencimento)"
+                  },
+                  "boxEnd": {
+                    "fieldName": "q3(dias_apos_vencimento)"
+                  },
+                  "whiskerEnd": {
+                    "fieldName": "max(dias_apos_vencimento)"
+                  },
+                  "axis": {
+                    "title": "dias após vencer"
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 5,
+            "y": 16,
+            "width": 7,
+            "height": 8
+          }
+        },
+        {
+          "widget": {
+            "name": "desperdicio-categoria",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "bdee0a4b",
+                  "fields": [
+                    {
+                      "name": "avg(pct_do_desperdicio)",
+                      "expression": "AVG(`pct_do_desperdicio`)"
+                    },
+                    {
+                      "name": "categoria",
+                      "expression": "`categoria`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "showDescription": true,
+                "title": {
+                  "value": "desperdicio por categoria",
+                  "fields": []
+                },
+                "description": {
+                  "value": "% do total de unidades descartadas",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "mark": {
+                "colors": [
+                  "#9329FF"
+                ]
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "avg(pct_do_desperdicio)",
+                  "axis": {
+                    "title": "% do desperdicio"
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "y": {
+                  "fieldName": "categoria",
+                  "axis": {
+                    "hideTitle": true
+                  },
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "x-reversed"
+                    }
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 16,
+            "width": 5,
+            "height": 8
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "85ecd805",
+      "displayName": "Despensa",
+      "layout": [
+        {
+          "widget": {
+            "name": "regiao",
+            "queries": [
+              {
+                "name": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e83ec91345817720ccaf6dbb60_regiao",
+                "query": {
+                  "datasetName": "c1f7e75a",
+                  "fields": [
+                    {
+                      "name": "regiao",
+                      "expression": "`regiao`"
+                    },
+                    {
+                      "name": "regiao_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e86d3f17279dedd51fcf47bb40_regiao",
+                "query": {
+                  "datasetName": "5c2dd637",
+                  "fields": [
+                    {
+                      "name": "regiao",
+                      "expression": "`regiao`"
+                    },
+                    {
+                      "name": "regiao_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Região",
+                  "fields": []
+                }
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "regiao",
+                    "queryName": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e83ec91345817720ccaf6dbb60_regiao"
+                  },
+                  {
+                    "fieldName": "regiao",
+                    "queryName": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e86d3f17279dedd51fcf47bb40_regiao"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "unidade-federativa",
+            "queries": [
+              {
+                "name": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e83ec91345817720ccaf6dbb60_uf",
+                "query": {
+                  "datasetName": "c1f7e75a",
+                  "fields": [
+                    {
+                      "name": "uf",
+                      "expression": "`uf`"
+                    },
+                    {
+                      "name": "uf_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e86d3f17279dedd51fcf47bb40_uf",
+                "query": {
+                  "datasetName": "5c2dd637",
+                  "fields": [
+                    {
+                      "name": "uf",
+                      "expression": "`uf`"
+                    },
+                    {
+                      "name": "uf_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Unidade Federativa",
+                  "fields": []
+                }
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "uf",
+                    "queryName": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e83ec91345817720ccaf6dbb60_uf"
+                  },
+                  {
+                    "fieldName": "uf",
+                    "queryName": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e86d3f17279dedd51fcf47bb40_uf"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 0,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "categoria",
+            "queries": [
+              {
+                "name": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e83ec91345817720ccaf6dbb60_categoria",
+                "query": {
+                  "datasetName": "c1f7e75a",
+                  "fields": [
+                    {
+                      "name": "categoria",
+                      "expression": "`categoria`"
+                    },
+                    {
+                      "name": "categoria_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Categoria",
+                  "fields": []
+                }
+              },
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "categoria",
+                    "queryName": "dashboards/01f1d0e76bd3101d97bfa65a06533ade/datasets/01f1d0e83ec91345817720ccaf6dbb60_categoria"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 0,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "e8d311b2",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "5c2dd637",
+                  "fields": [
+                    {
+                      "name": "pct_em_risco",
+                      "expression": "`pct_em_risco`"
+                    },
+                    {
+                      "name": "latitude",
+                      "expression": "`latitude`"
+                    },
+                    {
+                      "name": "longitude",
+                      "expression": "`longitude`"
+                    },
+                    {
+                      "name": "uf",
+                      "expression": "`uf`"
+                    },
+                    {
+                      "name": "unidades_em_risco",
+                      "expression": "`unidades_em_risco`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "mark": {
+                "opacity": 0.67
+              },
+              "widgetType": "symbol-map",
+              "encodings": {
+                "coordinates": {
+                  "latitude": {
+                    "fieldName": "latitude"
+                  },
+                  "longitude": {
+                    "fieldName": "longitude"
+                  }
+                },
+                "color": {
+                  "fieldName": "pct_em_risco",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "size": {
+                  "fieldName": "unidades_em_risco",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "extra": [
+                  {
+                    "fieldName": "uf"
+                  },
+                  {
+                    "fieldName": "pct_em_risco"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 5,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "b8cc5812",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "5c2dd637",
+                  "fields": [
+                    {
+                      "name": "avg(pct_em_risco)",
+                      "expression": "AVG(`pct_em_risco`)"
+                    },
+                    {
+                      "name": "uf",
+                      "expression": "`uf`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "mark": {
+                "colors": [
+                  "#9329FF"
+                ]
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "avg(pct_em_risco)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "y": {
+                  "fieldName": "uf",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "x-reversed"
+                    }
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 5,
+            "y": 2,
+            "width": 7,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "44e2cb40",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "c1f7e75a",
+                  "fields": [
+                    {
+                      "name": "status_validade",
+                      "expression": "`status_validade`"
+                    },
+                    {
+                      "name": "categoria",
+                      "expression": "`categoria`"
+                    },
+                    {
+                      "name": "count(*)",
+                      "expression": "COUNT(`*`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "categoria",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "count(*)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "status_validade",
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {
+                        "value": "VENCE_7D",
+                        "color": "#9329FF"
+                      },
+                      {
+                        "value": "VENCIDO",
+                        "color": {
+                          "themeColorType": "visualizationColors",
+                          "position": 10
+                        }
+                      },
+                      {
+                        "value": "VENCE_30D",
+                        "color": {
+                          "themeColorType": "visualizationColors",
+                          "position": 4
+                        }
+                      },
+                      {
+                        "value": "SEM_VALIDADE",
+                        "color": {
+                          "themeColorType": "visualizationColors",
+                          "position": 7
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 8,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "3741033d",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "c1f7e75a",
+                  "fields": [
+                    {
+                      "name": "bin(dias_ate_vencer, binWidth=50)",
+                      "expression": "BIN_FLOOR(`dias_ate_vencer`, 50)"
+                    },
+                    {
+                      "name": "count(*)",
+                      "expression": "COUNT(`*`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "mark": {
+                "colors": [
+                  "#9329FF"
+                ]
+              },
+              "widgetType": "histogram",
+              "encodings": {
+                "x": {
+                  "fieldName": "bin(dias_ate_vencer, binWidth=50)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "y": {
+                  "fieldName": "count(*)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 8,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "91f5046d",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "c1f7e75a",
+                  "fields": [
+                    {
+                      "name": "categoria",
+                      "expression": "`categoria`"
+                    },
+                    {
+                      "name": "min(vida_util_dias)",
+                      "expression": "MIN(`vida_util_dias`)"
+                    },
+                    {
+                      "name": "q1(vida_util_dias)",
+                      "expression": "PERCENTILE(`vida_util_dias`, 0.25)"
+                    },
+                    {
+                      "name": "median(vida_util_dias)",
+                      "expression": "MEDIAN(`vida_util_dias`)"
+                    },
+                    {
+                      "name": "q3(vida_util_dias)",
+                      "expression": "PERCENTILE(`vida_util_dias`, 0.75)"
+                    },
+                    {
+                      "name": "max(vida_util_dias)",
+                      "expression": "MAX(`vida_util_dias`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "box",
+              "encodings": {
+                "x": {
+                  "fieldName": "categoria",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "whiskerStart": {
+                    "fieldName": "min(vida_util_dias)"
+                  },
+                  "boxStart": {
+                    "fieldName": "q1(vida_util_dias)"
+                  },
+                  "boxMid": {
+                    "fieldName": "median(vida_util_dias)"
+                  },
+                  "boxEnd": {
+                    "fieldName": "q3(vida_util_dias)"
+                  },
+                  "whiskerEnd": {
+                    "fieldName": "max(vida_util_dias)"
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 14,
+            "width": 12,
+            "height": 6
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}
