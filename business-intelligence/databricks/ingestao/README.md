@@ -2,7 +2,7 @@
 
 Notebook SQL que copia o star schema do banco do app (PostgreSQL no Neon) para a camada
 Bronze do Databricks. É a **Task 1** (`ingestao_bronze`) do Job `Job_NexUs_BI`; a Task 2 roda o pipeline `Pipeline_silver_gold`
-(ver `databricks/pipeline/README.md`).
+(ver `business-intelligence/databricks/pipeline/README.md`).
 
 ## Fonte
 
