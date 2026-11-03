@@ -3,13 +3,13 @@
 `datamart_estrela.sql` cria o schema `bi` com views para ferramentas de BI.
 Rodar no pgAdmin (Query Tool) no banco do app, **depois** do dataload BI; só mexe nos schemas `bi` e `bi_hist`.
 
-A V11 adapta as views existentes ao histórico ligado a pantry_item e exclui saldo zero do fato de estoque. O Core grava movimentos reais e o dataload grava simulações no mesmo contrato. As fórmulas dos KPIs permanecem contando operações, não unidades; sua revisão fica para outra etapa.
+A V11 adapta as views existentes ao histórico ligado a pantry_item e exclui saldo zero do fato de estoque. O Core grava movimentos reais e o dataload grava simulações no mesmo contrato. D1 e D9 contam unidades (embalagens movimentadas), não operações, como o pipeline Gold do Databricks. O histórico é criado pelas migrations; o script para com erro se ele não existir.
 
 | Tipo | Views |
 |---|---|
 | Dimensões | `dim_tempo`, `dim_alimento` (com categoria), `dim_localidade` (cidade, UF, região), `dim_perfil`, `dim_empresa` (com plano) |
-| Fatos | `fato_estoque` (1 item hoje na despensa), `fato_movimento` (1 item consumido ou descartado), `fato_estoque_minimo` (household × alimento), `fato_pagamento` (1 cobrança), `fato_cadastro` (1 perfil) |
-| Evolução | `kpi_d1_evolucao_mensal`: running total da perda, variação mês a mês (`LAG`), média móvel e `RANK` |
+| Fatos | `fato_estoque` (1 item hoje na despensa), `fato_movimento` (1 movimento de consumo ou descarte, com a quantidade), `fato_estoque_minimo` (household × alimento), `fato_pagamento` (1 cobrança), `fato_cadastro` (1 perfil) |
+| Evolução | `kpi_d1_evolucao_mensal`: running total da perda, variação mês a mês (`LAG`), média móvel e `RANK`, mês a mês do calendário (mês sem movimento aparece com taxa vazia) |
 | Cards | `vw_kpi_cards`: valor, meta, desvio e situação de D1–D9 (+ financeiro e base ativa) |
 | Volume | `vw_volume_tabelas`: registros por tabela e se atinge 500 (company/store limitadas pelos profiles) |
 
@@ -17,14 +17,14 @@ A V11 adapta as views existentes ao histórico ligado a pantry_item e exclui sal
 
 | KPI | Fórmula | View de detalhe |
 |---|---|---|
-| D1 — Taxa de desperdício | item_expired / (item_expired + item_consumed) | `kpi_d1_desperdicio_mensal` (mês × região, com totais) |
+| D1 — Taxa de desperdício | unidades descartadas / (descartadas + consumidas) | `kpi_d1_desperdicio_mensal` (mês × região, com totais) |
 | D3 — % itens vencidos na despensa | vencidos / itens com validade | `kpi_d3_d4_d8_validade_uf` |
 | D4 — % a vencer em 7 dias | validade em até 7 dias / itens com validade | `kpi_d3_d4_d8_validade_uf` |
 | D5 — Ranking de vencimento | DENSE_RANK por UF de (vencidos + a vencer em 30 dias) | `kpi_d5_ranking_vencimento_uf` |
 | D6 — Estoque abaixo do mínimo | households abaixo / households com mínimo configurado | `kpi_d6_estoque_minimo_uf` |
 | D7 — Vida útil no cadastro | expiry_date − created_at (dias) | `kpi_d7_vida_util_categoria` |
 | D8 — % itens sem validade | COUNT(expiry_date IS NULL) / COUNT(*) | `kpi_d3_d4_d8_validade_uf` |
-| D9 — Índice de desperdício por categoria | expirados da categoria / households com a categoria | `kpi_d9_desperdicio_categoria` |
+| D9 — Índice de desperdício por categoria | unidades descartadas da categoria / households com a categoria | `kpi_d9_desperdicio_categoria` |
 
 Linhas com UF/categoria/mês vazios (NULL) nas views de detalhe são o total geral.
 
@@ -43,7 +43,9 @@ Regras de cálculo:
 - D4 conta de hoje até hoje + 7 (inclusive) e não inclui vencidos; D5 soma vencidos + a vencer em até 30 dias.
 - D6 segue `fn_get_items_below_minimum` (V8): lote vencido não conta como estoque.
 - D3, D4, D5 e D8 contam lotes (linhas de `pantry_item`), não unidades.
-- D9 pode passar de 1: é a média de itens descartados por household no período do histórico.
+- D9 pode passar de 1: é a média de unidades descartadas por household no período do histórico.
+- O ranking de perda (`kpi_d1_evolucao_mensal`) ignora meses sem perda estimada (`NULLS LAST`; o ranking fica vazio nesses meses).
+- `dim_tempo` cobre todas as datas das fatos (entrada do lote, evento, pagamento), então nenhum movimento some nos JOINs.
 
 O script pode rodar de novo: o `DROP SCHEMA bi CASCADE` refaz as views e, no fim, as permissões de leitura
 do usuário `databricks_bi` (Lakehouse Federation do Databricks), se ele existir.

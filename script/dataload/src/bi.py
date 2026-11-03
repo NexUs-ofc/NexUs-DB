@@ -495,18 +495,14 @@ class SimulacaoBI:
 
 
 # ------------------------------------------------------------------ carga
+# O histórico é criado e mantido pelas migrations (callback beforeMigrate + V11 + V13).
 HIST_DDL = """
-CREATE SCHEMA IF NOT EXISTS bi_hist;
-CREATE TABLE IF NOT EXISTS bi_hist.registro_estoque (
-    id                 SERIAL PRIMARY KEY,
-    pantry_item_id     INTEGER NOT NULL REFERENCES pantry_item(id) ON DELETE RESTRICT,
-    event_type         VARCHAR(30) NOT NULL CHECK (event_type IN ('CONSUMED', 'DISCARDED')),
-    quantity           INTEGER NOT NULL CHECK (quantity > 0),
-    event_date         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    estimated_loss     DECIMAL(10,2)
-);
-CREATE INDEX IF NOT EXISTS ix_registro_estoque_item_data
-    ON bi_hist.registro_estoque (pantry_item_id, event_date, id);
+DO $$
+BEGIN
+    IF to_regclass('bi_hist.registro_estoque') IS NULL THEN
+        RAISE EXCEPTION 'bi_hist.registro_estoque não existe: aplique as migrations (Flyway) antes do dataload BI';
+    END IF;
+END $$;
 """
 
 LIMPEZA_SQL = """
@@ -520,7 +516,7 @@ DELETE FROM store   WHERE company_id IN
     (SELECT c.id FROM company c JOIN profile p ON p.id = c.profile_id WHERE p.email LIKE %(m)s);
 DELETE FROM company WHERE profile_id IN (SELECT id FROM profile WHERE email LIKE %(m)s);
 CREATE TEMP TABLE end_bi ON COMMIT DROP AS SELECT address_id FROM profile WHERE email LIKE %(m)s;
-DELETE FROM profile WHERE email LIKE %(m)s;  -- cascata: pantry_item, settings, telefones, auth, bi_hist
+DELETE FROM profile WHERE email LIKE %(m)s;  -- cascata: pantry_item, settings, telefones, auth (bi_hist já foi apagado acima)
 DELETE FROM address a WHERE a.id IN (SELECT address_id FROM end_bi)
     AND NOT EXISTS (SELECT 1 FROM profile p WHERE p.address_id = a.id);
 -- catálogo da versão anterior do dataload BI (32 itens "NexUs BI"), se não estiver em uso

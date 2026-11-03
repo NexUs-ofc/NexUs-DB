@@ -50,23 +50,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Run migrations through V10
-        run: |
-          docker run --rm --network host \
-            -v "$PWD/migrations:/flyway/sql" \
-            flyway/flyway:10 \
-            -url=jdbc:postgresql://localhost:5432/nexus_test \
-            -user=testuser \
-            -password=testpass \
-            -locations=filesystem:/flyway/sql \
-            -target=10 \
-            migrate
-
-      - name: Prepare pre-existing stock history
-        env:
-          PGPASSWORD: testpass
-        run: psql -v ON_ERROR_STOP=1 -h localhost -U testuser -d nexus_test -f tests/fixtures/registro_estoque_pre_v11.sql
-
+      # Banco vazio, uma única execução: o callback beforeMigrate cria o histórico
+      # que a V11 converte, então nenhum passo manual é necessário.
       - name: Run Flyway migrations
         run: |
           docker run --rm --network host \
@@ -130,23 +115,8 @@ jobs:
           echo "MONGO_URI=mongodb://localhost:27017" >> .env
           echo "MONGO_DB=nexus_test" >> .env
 
-      - name: Run migrations through V10
-        run: |
-          docker run --rm --network host \
-            -v "$PWD/migrations:/flyway/sql" \
-            flyway/flyway:10 \
-            -url=jdbc:postgresql://localhost:5432/nexus_test \
-            -user=testuser \
-            -password=testpass \
-            -locations=filesystem:/flyway/sql \
-            -target=10 \
-            migrate
-
-      - name: Prepare pre-existing stock history
-        env:
-          PGPASSWORD: testpass
-        run: psql -v ON_ERROR_STOP=1 -h localhost -U testuser -d nexus_test -f tests/fixtures/registro_estoque_pre_v11.sql
-
+      # Banco vazio, uma única execução: o callback beforeMigrate cria o histórico
+      # que a V11 converte, então nenhum passo manual é necessário.
       - name: Run Flyway migrations
         run: |
           docker run --rm --network host \
@@ -160,6 +130,22 @@ jobs:
 
       - name: Run dataload
         run: python -m script.dataload.src.main all
+
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Apply DAU, data mart and catalog
+        env:
+          PGPASSWORD: testpass
+        run: |
+          for f in script/04_monitoramento/script_dau.sql \
+                   script/03_bi_views/datamart_estrela.sql \
+                   script/05_catalogo/01_estrutura.sql \
+                   script/05_catalogo/02_metadados_postgres.sql \
+                   script/05_catalogo/03_metadados_mongodb.sql; do
+            psql -v ON_ERROR_STOP=1 -h localhost -U testuser -d nexus_test -f "$f"
+          done
+          psql -v ON_ERROR_STOP=1 -h localhost -U testuser -d nexus_test -c "SELECT * FROM bi.vw_kpi_cards;"
 
       - name: Verify data
         run: |

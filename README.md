@@ -74,9 +74,7 @@ SELECT * FROM catalogo.vw_dicionario_dados WHERE objeto_nome = 'profile' ORDER B
 
 O schema é versionado com [Flyway](https://flywaydb.org/) em `migrations/` — mesmo
 contrato de banco usado pelo `auth-api` e pelo `NexUs-Core`. Veja
-[migrations/README.md](migrations/README.md) para como aplicar (inclui o passo de
-baseline necessário nos ambientes onde essas migrations já foram executadas
-manualmente).
+[migrations/README.md](migrations/README.md) para como aplicar.
 
 ### Enums
 

@@ -19,7 +19,9 @@ migrations/
 ├── V9__food_image_url.sql           # imagem do produto trazida da api
 ├── V10__audit_triggers.sql          # auditoria de profile e payment (herança de tabelas)
 ├── V11__record_stock_movements_and_preserve_empty_items.sql # movimentos reais e lotes com saldo zero
-└── V12__drop_plan_store_limit.sql   # remove o limite de lojas dos planos
+├── V12__drop_plan_store_limit.sql   # remove o limite de lojas dos planos
+├── V13__fix_history_cascade_audit_protection_and_billing_block.sql # histórico em cascata, logs protegidos, bloqueio por cobrança
+└── beforeMigrate__bi_hist_registro_estoque.sql # callback: cria o histórico em banco novo (antes da V11)
 ```
 
 O schema é compartilhado entre os serviços do NexUs, então o contrato do
@@ -41,11 +43,11 @@ não é necessário configurá-lo no `PATH`:
 
 ### Banco novo (ambiente local/CI)
 
-O Flyway cria seu histórico (`flyway_schema_history`) automaticamente. Para testar
-um banco vazio, aplique até a V10, prepare a tabela de histórico de estoque com
-`tests/fixtures/registro_estoque_pre_v11.sql` e depois execute `migrate` para aplicar
-as migrations restantes. A V11 altera essa tabela, que já existe no ambiente do
-aplicativo, mas era criada fora das migrations anteriores. O CI reproduz essa sequência.
+O Flyway cria seu histórico (`flyway_schema_history`) automaticamente. Em um banco
+vazio basta um único `migrate`: o callback `beforeMigrate__bi_hist_registro_estoque.sql`
+cria `bi_hist.registro_estoque` (vazia, no layout anterior à V11) e a V11 a converte.
+Nos ambientes em que a tabela já existe, o callback não faz nada. Callbacks não entram
+no `flyway_schema_history` e não alteram checksums. O CI aplica tudo de uma vez.
 
 ## Próximas migrations
 
@@ -64,11 +66,11 @@ antigos de limite são descartados; os planos e seus demais dados são preservad
 
 Permite saldo zero em pantry_item e registra CONSUMED ou DISCARDED com uma única quantity positiva em bi_hist.registro_estoque, ligada somente ao lote. O Core atualiza saldo e histórico na mesma transação e preserva lotes zerados fora das listagens.
 
-A V11 exige que bi_hist.registro_estoque já exista. Ela altera a tabela existente; não cria nem recria o schema ou a tabela. O CI prepara esse estado anterior com tests/fixtures/registro_estoque_pre_v11.sql depois da V10 para testar a atualização em um banco descartável.
+A V11 exige que bi_hist.registro_estoque já exista. Ela altera a tabela existente; não cria nem recria o schema ou a tabela. Em banco novo, quem cria a tabela é o callback `beforeMigrate`.
 
 Em bases com histórico antigo, a migration cria lotes encerrados para preservar os registros existentes, unifica as quantidades e converte os tipos. Quantidades inconsistentes com o tipo abortam a conversão. A perda monetária antiga é preservada; novas operações podem não ter estimated_loss.
 
-Somente fato_movimento, dim_tempo e fato_estoque são adaptadas quando já existem. As fórmulas dos indicadores ficam para depois. Aplique a V11 antes de publicar o Core. Detalhes em doc/movimentacoes_estoque.md.
+Somente fato_movimento, dim_tempo e fato_estoque são adaptadas quando já existem. As fórmulas dos indicadores ficam para depois. Aplique a V11 antes de publicar o Core.
 
 ## V8 — perfil, lojas, cobrança e desempenho
 
@@ -129,3 +131,20 @@ GRANT USAGE ON SCHEMA auditoria TO <usuario_do_servico>;
 GRANT INSERT ON ALL TABLES IN SCHEMA auditoria TO <usuario_do_servico>;
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA auditoria TO <usuario_do_servico>;
 ```
+
+Não conceda `UPDATE`, `DELETE` ou `TRUNCATE` no schema `auditoria`. Desde a V13 o `INSERT`
+direto (fora dos triggers) é recusado, então essa permissão não permite forjar logs.
+
+## V13 — integridade, auditoria e cobrança
+
+- `bi_hist.registro_estoque.pantry_item_id` passa de `ON DELETE RESTRICT` para `CASCADE`.
+  Antes, excluir um perfil com histórico falhava (exclusão de conta / LGPD).
+- `auditoria.fn_registrar_alteracao()` grava `profile.dietary_restrictions` só como hash MD5
+  (`auditoria.fn_mascarar`), e os logs antigos são mascarados na própria migration.
+- `auditoria.fn_proteger_log()` (trigger `BEFORE INSERT` nas tabelas de log) recusa INSERT
+  que não venha de um trigger e sobrescreve `usuario` e `alterado_em` com os valores reais.
+  Ao auditar uma tabela nova, crie também o trigger `trg_proteger_log_<tabela>`.
+- Nova tabela `billing_block`: `sp_update_overdue_payments` registra quem bloqueou por
+  inadimplência e só reativa esses perfis. Bloqueio manual não é mais desfeito pelo job.
+  Bloqueios existentes com pendência OVERDUE são migrados para a tabela.
+- `fn_get_items_below_minimum` passa a PL/pgSQL e recusa `profile_id <= 0`, com o mesmo contrato.

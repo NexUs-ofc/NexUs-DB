@@ -19,9 +19,9 @@ As etapas rodam nesta ordem (dependências das chaves estrangeiras do destino):
 
 | Etapa | Legado | Novo | Regras |
 |-------|--------|------|--------|
-| `categorias` | `tb_categoria` | `category` | nome sem espaços extras; se o nome já existe no destino, reaproveita |
+| `categorias` | `tb_categoria` | `category` | nome sem espaços extras; se o nome já existe no destino (sem diferenciar maiúsculas), reaproveita sem renomear |
 | `alimentos` | `tb_alimento` | `food` | `codigo_barras` → `gtin` quando é um GTIN válido (8, 12, 13 ou 14 dígitos); se o GTIN já existe, reaproveita o alimento. O legado não tem embalagem: `package_quantity = 1`, `unit_of_measure = 'unit'` |
-| `usuarios` | `tb_usuario` + `tb_endereco` da 1ª `tb_casa` | `profile` (`HOUSEHOLD`) + `address` | e-mail em minúsculas; CEP com 8 dígitos; estado convertido para a sigla (`São Paulo` → `SP`). Usuário sem casa é rejeitado (o destino exige endereço para `HOUSEHOLD`) |
+| `usuarios` | `tb_usuario` + `tb_endereco` da 1ª `tb_casa` | `profile` (`HOUSEHOLD`) + `address` | e-mail em minúsculas; CEP com 8 dígitos; estado convertido para a sigla (`São Paulo` → `SP`); sigla fora das 27 UFs é rejeitada. Usuário sem casa é rejeitado (o destino exige endereço para `HOUSEHOLD`) |
 | `casas` | `tb_casa` | — | a casa não tem tabela no destino: passa a apontar para o profile do dono |
 | `telefones` | `tb_telefone` (de usuário e de casa) | `profile_phone` | formato E.164; números sem DDI recebem `+55` |
 | `itens_dispensa` | `tb_item_dispensa` | `pantry_item` | quantidade maior que zero |
@@ -45,6 +45,10 @@ e `tb_usuario.configuracao_alerta`.
   não é necessária uma transação distribuída entre os dois bancos.
 - Registros já presentes em `rpa.mapeamento` são pulados. Telefones usam a chave primária
   `(profile_id, phone)` com `ON CONFLICT DO NOTHING`.
+- A carga é só de inclusão: alterações e exclusões feitas no legado depois da migração
+  de um registro não são propagadas.
+- A sessão do RPA roda com `SET nexus.carga_em_lote = 'on'`: itens migrados não contam
+  o household como ativo no DAU.
 
 ## Tratamento de falhas
 
@@ -54,7 +58,8 @@ e `tb_usuario.configuracao_alerta`.
   avaliado de novo, então basta corrigir o dado no legado e executar novamente.
 - **Erro de infraestrutura** (conexão, permissão, tabela inexistente): a etapa em andamento
   sofre rollback, a execução para com código de saída `1` e `rpa.execucao` registra
-  `FALHA` com a etapa e a mensagem. As etapas anteriores continuam gravadas.
+  `FALHA` com a etapa e a mensagem (se a própria conexão com o banco novo caiu, o RPA abre
+  outra só para gravar o resultado). As etapas anteriores continuam gravadas.
   Corrija a causa e execute de novo: a migração é retomada sem duplicar nada.
 
 ## Configuração
@@ -111,6 +116,8 @@ O workflow [`.github/workflows/rpa.yml`](../.github/workflows/rpa.yml) roda o RP
 - `concurrency` impede duas execuções simultâneas.
 - Se a migração falhar, o job fica vermelho e o GitHub avisa por e-mail. O `rpa.log` de cada
   execução fica disponível como artefato por 30 dias, e `rpa.execucao` guarda o histórico no banco.
+- O log não traz dados pessoais: o registro rejeitado aparece pelo id do legado e o motivo
+  não repete e-mail, CEP ou telefone (nem o DETAIL do PostgreSQL, que contém os valores).
 - Execuções agendadas só rodam a partir da branch padrão (`main`), ou seja, depois do merge.
 
 Configure em *Settings → Secrets and variables → Actions* os secrets:

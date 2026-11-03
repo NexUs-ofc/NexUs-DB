@@ -2,6 +2,8 @@
 
 Cada função devolve o valor já normalizado ou levanta ValueError com o motivo,
 para que o registro seja rejeitado (e logado) sem interromper a carga.
+As mensagens não repetem o valor de dados pessoais (e-mail, CEP, telefone):
+o log identifica o registro pelo id do legado.
 """
 import re
 import unicodedata
@@ -16,6 +18,7 @@ UFS = {
     "roraima": "RR", "santa catarina": "SC", "sao paulo": "SP", "sergipe": "SE",
     "tocantins": "TO",
 }
+SIGLAS = set(UFS.values())
 
 
 def texto(valor: str | None, campo: str, tamanho: int) -> str:
@@ -34,20 +37,20 @@ def texto_opcional(valor: str | None, campo: str, tamanho: int) -> str | None:
 def email(valor: str | None) -> str:
     valor = (valor or "").strip().lower()
     if len(valor) > 255 or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", valor):
-        raise ValueError(f"email inválido: '{valor}'")
+        raise ValueError("email inválido")
     return valor
 
 
 def cep(valor: str | None) -> str:
     digitos = re.sub(r"\D", "", valor or "")
     if len(digitos) != 8:
-        raise ValueError(f"CEP inválido: '{valor}'")
+        raise ValueError("CEP inválido")
     return digitos
 
 
 def uf(valor: str | None) -> str:
     valor = (valor or "").strip()
-    if re.fullmatch(r"[A-Za-z]{2}", valor):
+    if valor.upper() in SIGLAS:
         return valor.upper()
     sem_acento = unicodedata.normalize("NFKD", valor).encode("ascii", "ignore").decode()
     sigla = UFS.get(sem_acento.lower())
@@ -66,7 +69,7 @@ def telefone(valor: str | None) -> str:
             digitos = "55" + digitos
     numero = "+" + digitos
     if not re.fullmatch(r"\+[1-9][0-9]{7,14}", numero):
-        raise ValueError(f"telefone inválido: '{valor}'")
+        raise ValueError("telefone inválido")
     return numero
 
 

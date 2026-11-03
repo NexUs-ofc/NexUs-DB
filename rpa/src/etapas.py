@@ -50,9 +50,14 @@ def mapear(cur, entidade: str, id_legado: int, id_novo: int):
 
 
 def _mensagem(erro: Exception) -> str:
+    """Motivo da rejeição sem dados pessoais.
+
+    O DETAIL do PostgreSQL repete os valores (ex.: "Key (email)=(ana@x.com) already exists")
+    e o log vira artefato do GitHub: fica só a mensagem principal e o nome da restrição.
+    """
     if isinstance(erro, psycopg2.Error) and erro.diag.message_primary:
-        detalhe = erro.diag.message_detail
-        return erro.diag.message_primary + (f" ({detalhe})" if detalhe else "")
+        restricao = erro.diag.constraint_name
+        return erro.diag.message_primary + (f" ({restricao})" if restricao else "")
     return str(erro)
 
 
@@ -77,10 +82,12 @@ def migrar_categorias(legado, cur) -> Resumo:
             resumo.ja_migrados += 1
             continue
         with registro(cur, resumo, f"tb_categoria id={linha['id']}"):
-            # category_name é UNIQUE: se a categoria já existe no destino, reaproveita
+            # O nome é único sem diferenciar maiúsculas (uq_category_name_lower, V8): se a
+            # categoria já existe no destino, reaproveita o id sem renomear a existente.
             cur.execute(
                 """INSERT INTO category (category_name) VALUES (%s)
-                   ON CONFLICT (category_name) DO UPDATE SET category_name = EXCLUDED.category_name
+                   ON CONFLICT ((lower(category_name)))
+                   DO UPDATE SET category_name = category.category_name
                    RETURNING id""",
                 (t.texto(linha["nome"], "nome", 100),),
             )
