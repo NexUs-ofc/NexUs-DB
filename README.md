@@ -6,11 +6,12 @@ PostgreSQL MongoDB Python
 
 ## O que tem aqui
 
-O repositório tem quatro frentes:
+O repositório tem cinco frentes:
 
 - **Schema SQL** — DDL, enums, funções e triggers do PostgreSQL, versionado com Flyway sob `migrations/`.
 - **Dataload** — popula dados fictícios no PostgreSQL e no MongoDB (`script/dataload`), assumindo o schema já aplicado.
 - **Catálogo de metadados** — o que cada tabela, coluna e collection significa, com tipo, chaves e classificação LGPD (`script/05_catalogo/` e `doc/catalogo/`).
+- **Business Intelligence** — pipeline Bronze → Silver → Gold no Databricks, dashboard e relatório gerencial (`business-intelligence/`, com [README próprio](business-intelligence/README.md)).
 - **Auxiliares** — views de BI, scripts de monitoramento e placeholders para trabalhos futuros.
 
 ```
@@ -26,7 +27,11 @@ NexUs-DB/
 │   ├── catalogo/             # catálogo de metadados (PostgreSQL, data mart, MongoDB)
 │   ├── engenharia_de_dados.md # requisitos, auditoria, DAU, índices, backup e validação
 │   └── evidencias/           # logs dos testes de EXPLAIN ANALYZE e de backup/restauração
+├── business-intelligence/    # pipeline Databricks, dashboard, evidências e relatório gerencial
 ├── rpa/                      # RPA de migração do banco legado
+├── tests/                    # testes automatizados
+├── k8s/, Dockerfile          # imagem e manifests (ver docs/containers.md)
+├── .github/workflows/        # CI (lint, validação do DDL, testes), RPA e containers
 ├── requirements.txt
 └── .env                      # credenciais (não versionado)
 ```
@@ -102,6 +107,8 @@ contrato de banco usado pelo `auth-api` e pelo `NexUs-Core`. Veja
 | `payment` | Pagamentos de planos |
 | `pantry_item` | Itens no estoque doméstico |
 | `pantry_product_setting` | Configuração de quantidade mínima por alimento |
+| `billing_block` | Perfis bloqueados por inadimplência pelo job de cobrança (V13) |
+| `bi_hist.registro_estoque` | Histórico de consumo e descarte de cada item do estoque (V11) |
 
 ### Regras de negócio
 
@@ -111,6 +118,7 @@ As regras vivem em funções + triggers, não na camada de aplicação:
 - **`prevent_profile_type_change()`** — impede que o `type` de um profile seja alterado depois de criado.
 - **Cobrança e estoque (V8)** — `fn_get_expiring_products`, `fn_get_items_below_minimum`, `sp_generate_monthly_payments` e `sp_update_overdue_payments` (contratos em [migrations/README.md](migrations/README.md)).
 - **Auditoria (V10)** — `profile` e `payment` gravam OLD, NEW, TG_OP e CURRENT_USER em `auditoria.log_profile` e `auditoria.log_payment`, filhas de `auditoria.log_alteracao` (herança).
+- **Estoque e integridade (V11–V13)** — item zerado continua no estoque e cada consumo ou descarte vai para `bi_hist.registro_estoque`; o job de inadimplência só reativa os perfis que ele mesmo bloqueou (`billing_block`); os logs de auditoria mascaram dados sensíveis e só aceitam gravação feita pelos triggers.
 
 Nota sobre IDs: as tabelas usam `SERIAL PRIMARY KEY` (auto-incremento nativo do Postgres).
 
@@ -163,8 +171,9 @@ Mapeamento, tratamento de falhas e configuração em [rpa/README.md](rpa/README.
 
 ## Configuração do ambiente
 
-- Crie um `.env` na raiz com as credenciais de PostgreSQL e MongoDB (o `.env` é o único arquivo ignorado no `.gitignore`).
+- Crie um `.env` na raiz com as credenciais de PostgreSQL e MongoDB (o `.env` não é versionado).
 - Aplique o schema com Flyway (`migrations/`) antes de rodar o dataload.
+- Rode os testes com `python -m unittest discover -s tests` (o mesmo comando do CI).
 
 ## Engenharia de dados
 
