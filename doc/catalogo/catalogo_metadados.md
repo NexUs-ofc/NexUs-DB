@@ -4,6 +4,7 @@ Descreve **o que cada dado significa, onde ele vive, como é definido e quão se
 nos três repositórios de dados do NexUs. Para ter o catálogo como tabela no banco (schema `catalogo`),
 rode os scripts de [script/05_catalogo/](../../script/05_catalogo/) na ordem `01`, `02` e `03`.
 
+
 | # | Seção | Conteúdo |
 |---|---|---|
 | 1 | [PostgreSQL — schema `public`](#1-postgresql-schema-public) | 12 tabelas transacionais, 5 enums, regras de negócio e diagrama ER |
