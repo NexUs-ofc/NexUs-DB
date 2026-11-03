@@ -11,7 +11,7 @@ Executa a pipeline inteira sem abrir notebook, manualmente (**Run now**) ou agen
 
 | Ordem | Task | Tipo | O que roda |
 |---|---|---|---|
-| 1 | `ingestao_bronze` | Notebook (serverless) | `databricks/ingestao/01_ingestao_bronze.sql` |
+| 1 | `ingestao_bronze` | Notebook (serverless) | `business-intelligence/databricks/ingestao/01_ingestao_bronze.sql` |
 | 2 | `Transformation_silver_gold` | ETL pipeline (depende da task 1) | `Pipeline_silver_gold` = `02_silver.sql` + `03_gold.sql` |
 
 - **Agendamento:** todo dia às 07:00, fuso `America/Sao_Paulo` (1 foto diária da despensa; poupa a cota da Free Edition).
